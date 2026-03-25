@@ -1,0 +1,121 @@
+Register Name,Bit Name,Bit Description,High State Meaning,Low State Meaning
+Battery Status,OCA,Over Charge Alarm,Active,Inactive
+Battery Status,TCA,Terminate Charge Alarm,Active,Inactive
+Battery Status,OTA,Over Temperature Alarm,Active,Inactive
+Battery Status,TDA,Terminate Discharge Alarm,Active,Inactive
+Battery Status,RCA,Remaining Capacity Alarm,Active,Inactive
+Battery Status,RTA,Remaining Time Alarm,Active,Inactive
+Battery Status,INIT,Initialization,Active,Inactive
+Battery Status,DSG,Discharging,Discharging,Charging
+Battery Status,FC,Fully Charged,Fully charged,Not fully
+Battery Status,FD,Fully Discharged,Fully depleted,Ok
+Battery Status,EC3,Error Code[3],0x0 - OK,0x1 - Busy
+Battery Status,EC2,Error Code[2],0x2 - Rsvd,0x3 - Unsup. Comm.
+Battery Status,EC1,Error Code[1],0x4 - Access Denied,0x5 - Over/Underflow
+Battery Status,EC0,Error Code [0],0x6 - Bad Size,0x7 - Unknown
+Operation Status A,SLEEP,Sleep Mode,In sleep mode,Not in sleep
+Operation Status A,XCHG,Charge Enable,Charging disabled,Charging enabled
+Operation Status A,XDSG,Discharge Enable,Discharging disabled,Discharging enabled
+Operation Status A,PF,Permanent Failure,Active,Inactive
+Operation Status A,SS,Safety mode status,Active,Inactive
+Operation Status A,SDV,Shutdown triggered via low pack voltage,Active,Inactive
+Operation Status A,SEC[1],Security bit 1,"1, 1 - Sealed","1, 0 - Unsealed"
+Operation Status A,SEC[0],Security bit 0 ,"0, 1 - Full Access","0, 0 - Rsvd"
+Operation Status A,CHG,Charge FET status,Active,Inactive
+Operation Status A,DSG,Discharge FET Status,Active,Inactive
+Operation Status B,EMSHUT,Emergency FET Shutdown,Active,Inactive
+Operation Status B,CB,Cell Balancing,Active,Inactive
+Operation Status B,SLPCC,CC measurement in Sleep,Active,Inactive
+Operation Status B,SLPAD,ADC Measurement in Sleep,Active,Inactive
+Operation Status B,SMBLCAL,Auto-offset calibration when bus low detected,Active,Inactive
+Operation Status B,INIT,Initialization after full reset,Active,Inactive
+Operation Status B,SLEEPM,Sleep mode,Active,Inactive
+Operation Status B,XL,400-kHz mode,Active,Inactive
+Operation Status B,CAL_OFFSET,Calibration Output,See Tech. Ref. pg.94,See Tech. Ref. pg.94
+Operation Status B,CAL,Calibration Output,See Tech. Ref. pg.94,See Tech. Ref. pg.94
+Operation Status B,AUTHCALM,Auto CC Offset Cal,See Tech. Ref. pg.94,See Tech. Ref. pg.94
+Operation Status B,AUTH,Authentication in progress,Active,Inactive
+Operation Status B,SDM,Shutdown triggered via command,Active,Inactive
+Charging Status,VCT,Charge Termination,Active,Inactive
+Charging Status,MCHG,Maintenance Charge,Active,Inactive
+Charging Status,SU,Charge Suspend,Active,Inactive
+Charging Status,IN,Charge Inhibit,Active,Inactive
+Charging Status,HV,High Voltage Region,Active,Inactive
+Charging Status,MV,Mid Voltage Region,Active,Inactive
+Charging Status,LV,Low Voltage Region,Active,Inactive
+Charging Status,PV,Precharge Voltage Region,Active,Inactive
+Temp Range,OT,Over Temperature Region,Active,Inactive
+Temp Range,HT,High Temperature Region,Active,Inactive
+Temp Range,STH,Standard Temperature High Region,Active,Inactive
+Temp Range,RT,Room Temperature Region,Active,Inactive
+Temp Range,STL,Standard Temperature Low Region,Active,Inactive
+Temp Range,LT,Low Temperature Region,Active,Inactive
+Temp Range,UT,Under Temperature Region,Active,Inactive
+IT Status,OCVFR,Open Circuit Voltage in Flat Region (during RELAX),Detected,Not Detected
+IT Status,LDMD,LOAD mode,Constant Power,Constant Current
+IT Status,RX,Resistance Update,Toggles after every resistance update,Toggles after every resistance update
+IT Status,QMAX,QMax Update,Toggles after every QMax update,Toggles after every QMax update
+IT Status,VDQ,Discharge Qualified for Learning (based on RU flag),-,-
+IT Status,NSFM,Negative Scale Factor Mode,Negative Ra Scaling Factor Detected,Negative Ra Scaling Factor Not Detected
+IT Status,SLQPMAX,QMax Update During Sleep,Active,Inactive
+IT Status,QEN,Impedance Track Gauging (Ra and QMax updates are enabled.),Enabled,Disabled
+IT Status,VOK,Voltage OK for QMax Update,Detected,Not Detected
+IT Status,RDIS,Resistance Updates,Disabled,Enabled
+IT Status,REST,Rest,OCV Reading Taken / Detected,OCV Reading Not Taken or Not in Relax / Not Detected
+Gauging Status,CF,Condition Flag,MaxError() > Max Error Limit (Condition Cycle is needed.),MaxError() < Max Error Limit (Condition Cycle is not needed.)
+Gauging Status,DSG,Discharge/Relax,Charging Not Detected,Charging Detected
+Gauging Status,EDV,End-of-Discharge Termination Voltage,Termination voltage reached during discharge,Termination voltage not reached or not in DISCHARGE mode
+Gauging Status,BAL_EN,Cell Balancing,Cell balancing is possible if enabled.,Cell balancing is not allowed.
+Gauging Status,TC,Terminate Charge,Detected,Not Detected
+Gauging Status,TD,Terminate Discharge,Detected,Not Detected
+Gauging Status,FC,Fully Charged,Detected,Not Detected
+Gauging Status,FD,Fully Discharged,Detected,Not Detected
+Manufacturing Status,CAL_EN,CALIBRATION Mode,Enabled,Disabled
+Manufacturing Status,PF_EN,Permanent Failure,Enabled,Disabled
+Manufacturing Status,LF_EN,Lifetime Data Collection,Enabled,Disabled
+Manufacturing Status,FET_EN,All FET Action,Enabled,Disabled
+Manufacturing Status,GAUGE_EN,Gas Gauging,Enabled,Disabled
+Manufacturing Status,DSG_TEST,Discharge FET Test,Discharge FET test activated,Disabled
+Manufacturing Status,CHG_TEST,Charge FET Test,Charge FET test activated,Disabled
+Safety Alert A+B,CUV,Cell Undervoltage,Detected,Not Detected
+Safety Alert A+B,COV,Cell Overvoltage,Detected,Not Detected
+Safety Alert A+B,OCC,Overcurrent During Charge,Detected,Not Detected
+Safety Alert A+B,OCD,Overcurrent During Discharge,Detected,Not Detected
+Safety Alert A+B,AOLD,Overload During Discharge,Detected,Not Detected
+Safety Alert A+B,ASCC,Short-Circuit During Charge,Detected,Not Detected
+Safety Alert A+B,ASCD,Short-Circuit During Discharge,Detected,Not Detected
+Safety Alert A+B,OTC,Overtemperature During Charge,Detected,Not Detected
+Safety Alert A+B,OTD,Overtemperature During Discharge,Detected,Not Detected
+Safety Alert C+D,PTOS,Precharge Timeout Suspend,Detected,Not Detected
+Safety Alert C+D,CTOS,Charge Timeout Suspend,Detected,Not Detected
+Safety Alert C+D,UTC,Undertemperature During Charge,Detected,Not Detected
+Safety Alert C+D,UTD,Undertemperature During Discharge,Detected,Not Detected
+Safety Status A+B,CUV,Cell Undervoltage,Detected,Not Detected
+Safety Status A+B,COV,Cell Overvoltage,Detected,Not Detected
+Safety Status A+B,OCC,Overcurrent During Charge,Detected,Not Detected
+Safety Status A+B,OCD,Overcurrent During Discharge,Detected,Not Detected
+Safety Status A+B,AOLD,Overload During Discharge,Detected,Not Detected
+Safety Status A+B,ASCC,Short-Circuit During Charge,Detected,Not Detected
+Safety Status A+B,ASCD,Short-Circuit During Discharge,Detected,Not Detected
+Safety Status A+B,OTC,Overtemperature During Charge,Detected,Not Detected
+Safety Status A+B,OTD,Overtemperature During Discharge,Detected,Not Detected
+Safety Status C+D,PTO,Precharge Timeout,Detected,Not Detected
+Safety Status C+D,CTO,Charge Timeout,Detected,Not Detected
+Safety Status C+D,UTC,Undertemperature During Charge,Detected,Not Detected
+Safety Status C+D,UTD,Undertemperature During Discharge,Detected,Not Detected
+PF Alert A+B,SUV,Safety Cell Undervoltage Failure,Detected,Not Detected
+PF Alert A+B,SOV,Safety Cell Overvoltage Failure,Detected,Not Detected
+PF Alert A+B,VIMR,Voltage Imbalance While Pack Is At Rest Failure,Detected,Not Detected
+PF Alert A+B,VIMA,Voltage Imbalance While Pack Is Active Failure,Detected,Not Detected
+PF Alert C+D,CFETF,Charge FET Failure,Detected,Not Detected
+PF Alert C+D,DFETF,Discharge FET Failure,Detected,Not Detected
+PF Status A+B,SUV,Safety Cell Undervoltage Failure,Detected,Not Detected
+PF Status A+B,SOV,Safety Cell Overvoltage Failure,Detected,Not Detected
+PF Status A+B,VIMR,Voltage Imbalance While Pack Is At Rest Failure,Detected,Not Detected
+PF Status A+B,VIMA,Voltage Imbalance While Pack Is Active Failure,Detected,Not Detected
+PF Status C+D,CFETF,Charge FET Failure,Detected,Not Detected
+PF Status C+D,DFETF,Discharge FET Failure,Detected,Not Detected
+LStatus,FIELD_QMAX,QMax field updates,QMax is updated in the field,QMax is not updated in the field
+LStatus,ITEN,IT enable,IT enabled,IT disabled
+LStatus,CF1,QMax Status [1],"0, 0 - Battery OK","0, 1 - QMax is first updated in learning cycle."
+LStatus,CF0,QMax Status [0],"1, 0 - QMax and resistance table updated in learning cycle","1, 1 - Rsvd"

@@ -1,0 +1,7 @@
+*.json
+.venv
+__pycache__
+*test*
+*.pyc
+*.pdf
+*trm*
