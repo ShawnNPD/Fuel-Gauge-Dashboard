@@ -1,7 +1,8 @@
 *.json
 .venv
 __pycache__
-*test*
+test_archive
 *.pyc
 *.pdf
 *trm*
+out.txt
