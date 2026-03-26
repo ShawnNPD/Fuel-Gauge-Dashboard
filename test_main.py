@@ -15,9 +15,15 @@ class DummyStringVar:
     def set(self, val): self.val = val
     def get(self): return self.val
 
+class DummyBooleanVar:
+    def __init__(self, *args, value=False, **kwargs): self.val = value
+    def set(self, val): self.val = bool(val)
+    def get(self): return self.val
+
 tk_mock = MagicMock()
 tk_mock.Tk = DummyTk
 tk_mock.StringVar = DummyStringVar
+tk_mock.BooleanVar = DummyBooleanVar
 
 sys.modules['tkinter'] = tk_mock
 sys.modules['tkinter.ttk'] = MagicMock()
@@ -89,8 +95,11 @@ def test_poll_data(mock_sleep, app):
     app.bq = MagicMock()
     app.bq.get_voltage.return_value = (3500, "0x0DAC")
     app.bq.get_current.return_value = (-500, "0xFE0C")
+    app.show_battery_status.set(False)
+    app.show_safety_alert.set(False)
+    app.show_safety_status.set(False)
     with patch.object(app, 'after') as mock_after:
         app.poll_data()
         app.lbl_voltage.config.assert_any_call(text="3500 mV  (0x0DAC)")
         app.lbl_current.config.assert_any_call(text="-500 mA  (0xFE0C)")
-        mock_after.assert_called_once_with(5, app.poll_data)
+        mock_after.assert_called_once_with(100, app.poll_data)

@@ -6,3 +6,4 @@ test_archive
 *.pdf
 *trm*
 out.txt
+logs

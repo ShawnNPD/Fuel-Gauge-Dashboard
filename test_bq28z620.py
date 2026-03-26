@@ -1,6 +1,6 @@
 import pytest
-from unittest.mock import MagicMock
-from bq28z620 import BQ28z620
+from unittest.mock import MagicMock, patch
+from bq28z620 import BQ28z620, BATTERY_STATUS_BITS, SAFETY_ALERT_BITS, SAFETY_STATUS_BITS
 
 def test_bytes_to_uint_le():
     assert BQ28z620.bytes_to_uint_le([0x01]) == 1
@@ -71,3 +71,77 @@ def test_get_current():
     val, hex_str = bq.get_current()
     assert val == -100
     assert hex_str == "0xFF9C"
+
+# --- New tests for status register features ---
+
+def test_parse_bits_all_clear():
+    result = BQ28z620.parse_bits(0x0000, BATTERY_STATUS_BITS)
+    assert all(v is False for v in result.values())
+
+def test_parse_bits_some_set():
+    # Set bit 6 (DSG) and bit 5 (FC)
+    result = BQ28z620.parse_bits(0x0060, BATTERY_STATUS_BITS)
+    assert result["DSG"] is True
+    assert result["FC"] is True
+    assert result["OCA"] is False
+    assert result["FD"] is False
+
+def test_parse_bits_none_value():
+    result = BQ28z620.parse_bits(None, BATTERY_STATUS_BITS)
+    assert all(v is False for v in result.values())
+
+def test_get_battery_status():
+    mock_bp = MagicMock()
+    mock_bp.read_register.return_value = [0x40, 0x00]  # bit 6 = DSG
+    bq = BQ28z620(mock_bp)
+
+    val, hex_str = bq.get_battery_status()
+    mock_bp.read_register.assert_called_with(0xAA, 0xAB, 0x0a, length=2)
+    assert val == 0x0040
+    assert hex_str == "0x0040"
+
+@patch('bq28z620.time.sleep')
+def test_read_mac_subcommand(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = True
+    mock_bp.read_register.return_value = [0x00, 0x00, 0x00, 0x00]
+    bq = BQ28z620(mock_bp)
+
+    data = bq.read_mac_subcommand(0x0050, length=4)
+    # Verify write: subcmd 0x0050 -> [0x50, 0x00]
+    mock_bp.write_register.assert_called_with(0xAA, 0x00, [0x50, 0x00])
+    # Verify read from MACData 0x23
+    mock_bp.read_register.assert_called_with(0xAA, 0xAB, 0x23, length=4)
+    assert data == [0x00, 0x00, 0x00, 0x00]
+
+@patch('bq28z620.time.sleep')
+def test_get_safety_alert(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = True
+    # Bit 3 = COV set in byte A
+    mock_bp.read_register.return_value = [0x08, 0x00, 0x00, 0x00]
+    bq = BQ28z620(mock_bp)
+
+    val, hex_str = bq.get_safety_alert()
+    assert val == 0x00000008
+    assert hex_str == "0x00000008"
+
+@patch('bq28z620.time.sleep')
+def test_get_safety_status(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = True
+    mock_bp.read_register.return_value = [0x04, 0x00, 0x00, 0x00]  # Bit 2 = CUV
+    bq = BQ28z620(mock_bp)
+
+    val, hex_str = bq.get_safety_status()
+    assert val == 0x00000004
+    assert hex_str == "0x00000004"
+
+@patch('bq28z620.time.sleep')
+def test_read_mac_subcommand_write_failure(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = False
+    bq = BQ28z620(mock_bp)
+
+    data = bq.read_mac_subcommand(0x0050)
+    assert data is None
