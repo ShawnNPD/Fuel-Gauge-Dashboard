@@ -87,3 +87,11 @@ class BQ28z620:
         Returns signed current in mA.
         """
         return self.read_data(0x0C, data_type='int16')
+
+    def reset(self):
+        """
+        Sends the RESET MAC subcommand (0x0041) to the BQ28Z620.
+        Writes 0x0041 (little-endian: [0x41, 0x00]) to ManufacturerAccess register 0x00.
+        Returns True if the write was issued successfully.
+        """
+        return self.bp.write_register(self.addr_w, 0x00, [0x41, 0x00])

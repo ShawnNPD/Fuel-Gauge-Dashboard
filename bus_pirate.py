@@ -15,13 +15,13 @@ class BusPirate:
             for attempt in range(5):
                 try:
                     self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
-                    time.sleep(0.5)
+                    time.sleep(1.5)
                     self.serial.reset_input_buffer()
                     self.serial.reset_output_buffer()
                     break
                 except serial.SerialException as e:
                     if attempt < 4:
-                        time.sleep(1.0)
+                        time.sleep(2.0)
                     else:
                         raise e
             

@@ -8,7 +8,7 @@ from bus_pirate import BusPirate
 from bq28z620 import BQ28z620
 
 CONFIG_FILE = "config.json"
-POLL_RATE = 5  # ms
+POLL_RATE = 100  # ms
 
 class FuelGaugeDashboard(tk.Tk):
     def __init__(self):
@@ -69,6 +69,13 @@ class FuelGaugeDashboard(tk.Tk):
         ttk.Label(frame_bot, text="Current:", font=("Helvetica", 14, "bold")).grid(row=1, column=0, sticky="w", padx=20, pady=20)
         self.lbl_current = ttk.Label(frame_bot, text="---", font=("Helvetica", 14))
         self.lbl_current.grid(row=1, column=1, sticky="w", padx=20, pady=20)
+
+        # Commands
+        frame_cmd = ttk.LabelFrame(self, text="Commands")
+        frame_cmd.pack(padx=10, pady=5, fill="x")
+
+        self.btn_reset = ttk.Button(frame_cmd, text="Reset BQ28Z620", command=self.send_reset)
+        self.btn_reset.pack(side="left", padx=10, pady=5)
             
     def refresh_ports(self):
         ports = serial.tools.list_ports.comports()
@@ -124,6 +131,22 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_connect.config(text="Connect")
         self.lbl_voltage.config(text="---")
         self.lbl_current.config(text="---")
+
+    def send_reset(self):
+        """Send a RESET command to the BQ28Z620."""
+        if not self.bq:
+            return
+
+        self.is_polling = False
+        self.bq.reset()
+        # Resume polling after a brief delay to let the device restart
+        self.after(2000, self._resume_polling)
+
+    def _resume_polling(self):
+        """Resume data polling after a reset."""
+        if self.bp and self.bp.connected:
+            self.is_polling = True
+            self.poll_data()
             
     def poll_data(self):
         if not self.is_polling:
