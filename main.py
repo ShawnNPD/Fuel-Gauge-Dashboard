@@ -6,10 +6,10 @@ import json
 import os
 from datetime import datetime
 from bus_pirate import BusPirate
-from bq28z620 import BQ28z620, BATTERY_STATUS_BITS, SAFETY_ALERT_BITS, SAFETY_STATUS_BITS
+from bq28z620 import BQ28z620, BATTERY_STATUS_BITS, SAFETY_ALERT_BITS, SAFETY_STATUS_BITS, PF_ALERT_BITS, PF_STATUS_BITS
 
 CONFIG_FILE = "config.json"
-POLL_RATE = 100  # ms
+POLL_RATE = 5  # ms
 
 # Colors for bit status indicators
 COLOR_ACTIVE = "#22c55e"    # green
@@ -19,16 +19,18 @@ class FuelGaugeDashboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("BQ28Z620 Fuel Gauge Dashboard")
-        self.geometry("550x600")
+        self.geometry("850x1024")
         
         self.bp = None
         self.bq = None
         self.is_polling = False
 
         # Toggle vars for status registers
-        self.show_battery_status = tk.BooleanVar(value=False)
-        self.show_safety_alert = tk.BooleanVar(value=False)
-        self.show_safety_status = tk.BooleanVar(value=False)
+        self.show_battery_status = tk.BooleanVar(value=True)
+        self.show_safety_alert = tk.BooleanVar(value=True)
+        self.show_safety_status = tk.BooleanVar(value=True)
+        self.show_pf_alert = tk.BooleanVar(value=True)
+        self.show_pf_status = tk.BooleanVar(value=True)
 
         # Label references for status bit displays
         self.status_bit_labels = {}
@@ -39,9 +41,10 @@ class FuelGaugeDashboard(tk.Tk):
         self.prev_status = {}  # tracks previous bit values for change detection
         
         self.setup_ui()
-        
-        # Schedule auto-connect shortly after UI loads
-        self.after(100, lambda: self.connect(silent=True))
+        self.rebuild_status_display()
+
+        # Spacebar toggles connect/disconnect
+        self.bind("<space>", lambda e: self.toggle_connection())
         
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -75,6 +78,15 @@ class FuelGaugeDashboard(tk.Tk):
         
         self.btn_connect = ttk.Button(frame_top, text="Connect", command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=5, pady=5)
+
+        ttk.Separator(frame_top, orient="vertical").pack(side="left", padx=5, fill="y", pady=5)
+
+        ttk.Label(frame_top, text="I2C Clock (kHz):").pack(side="left", padx=5, pady=5)
+        config = self.load_config()
+        self.clock_var = tk.StringVar(value=str(config.get("clock_khz", 10)))
+        self.clock_entry = ttk.Entry(frame_top, textvariable=self.clock_var, width=6)
+        self.clock_entry.pack(side="left", padx=2, pady=5)
+        ttk.Button(frame_top, text="Set Clock", command=self.set_clock).pack(side="left", padx=5, pady=5)
         
         # Values Display
         frame_bot = ttk.LabelFrame(self, text="BQ28Z620 Live Metrics")
@@ -98,6 +110,15 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_log = ttk.Button(frame_cmd, text="Start Log", command=self.toggle_logging)
         self.btn_log.pack(side="left", padx=10, pady=5)
 
+        self.btn_clear_pf = ttk.Button(frame_cmd, text="Clear PF Faults", command=self.clear_pf_faults)
+        self.btn_clear_pf.pack(side="left", padx=10, pady=5)
+
+        self.btn_toggle_chg = ttk.Button(frame_cmd, text="Toggle CHG FET", command=self.toggle_chg_fet)
+        self.btn_toggle_chg.pack(side="left", padx=10, pady=5)
+
+        self.btn_toggle_dsg = ttk.Button(frame_cmd, text="Toggle DSG FET", command=self.toggle_dsg_fet)
+        self.btn_toggle_dsg.pack(side="left", padx=10, pady=5)
+
         # Status Register Toggles
         frame_toggles = ttk.LabelFrame(self, text="Status Registers")
         frame_toggles.pack(padx=10, pady=5, fill="x")
@@ -110,6 +131,12 @@ class FuelGaugeDashboard(tk.Tk):
                         command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="Safety Status",
                         variable=self.show_safety_status,
+                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+        ttk.Checkbutton(frame_toggles, text="PF Alert",
+                        variable=self.show_pf_alert,
+                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+        ttk.Checkbutton(frame_toggles, text="PF Status",
+                        variable=self.show_pf_status,
                         command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
 
         # Scrollable status display area
@@ -136,29 +163,37 @@ class FuelGaugeDashboard(tk.Tk):
             row = self._build_register_section(
                 "Safety Status (0x0051)", SAFETY_STATUS_BITS, "ss", row)
 
+        if self.show_pf_alert.get():
+            row = self._build_register_section(
+                "PF Alert (0x0052)", PF_ALERT_BITS, "pfa", row)
+
+        if self.show_pf_status.get():
+            row = self._build_register_section(
+                "PF Status (0x0053)", PF_STATUS_BITS, "pfs", row)
+
     def _build_register_section(self, title, bit_map, prefix, start_row):
         """Build a labeled grid of bit indicators for one register."""
         ttk.Label(self.status_frame, text=title,
                   font=("Helvetica", 10, "bold")).grid(
-            row=start_row, column=0, columnspan=8, sticky="w", padx=5, pady=(8, 2))
+            row=start_row, column=0, columnspan=4, sticky="w", padx=5, pady=(8, 2))
         
         # Raw hex value label
         hex_key = f"{prefix}_hex"
         hex_lbl = ttk.Label(self.status_frame, text="---", font=("Helvetica", 9))
-        hex_lbl.grid(row=start_row, column=8, columnspan=2, sticky="e", padx=5)
+        hex_lbl.grid(row=start_row, column=4, columnspan=2, sticky="e", padx=5)
         self.status_bit_labels[hex_key] = hex_lbl
 
         row = start_row + 1
         col = 0
         # Sort bits by position descending for a natural MSB-first layout
         for bit_pos in sorted(bit_map.keys(), reverse=True):
-            name = bit_map[bit_pos]
-            lbl = tk.Label(self.status_frame, text=name, fg=COLOR_INACTIVE,
-                           font=("Consolas", 9, "bold"), width=6, anchor="center")
+            name, _high, low = bit_map[bit_pos]
+            lbl = tk.Label(self.status_frame, text=f"{name}\n{low}", fg=COLOR_INACTIVE,
+                           font=("Consolas", 9, "bold"), width=24, anchor="center")
             lbl.grid(row=row, column=col, padx=2, pady=1)
             self.status_bit_labels[f"{prefix}_{bit_pos}"] = lbl
             col += 1
-            if col >= 8:
+            if col >= 4:
                 col = 0
                 row += 1
 
@@ -167,18 +202,20 @@ class FuelGaugeDashboard(tk.Tk):
         return row
 
     def _update_bit_labels(self, prefix, raw_value, bit_map, hex_str):
-        """Update the color of each bit label based on the raw register value."""
+        """Update the text and color of each bit label based on the raw register value."""
         hex_key = f"{prefix}_hex"
         if hex_key in self.status_bit_labels:
             self.status_bit_labels[hex_key].config(
                 text=hex_str if hex_str else "Err")
 
         bits = BQ28z620.parse_bits(raw_value, bit_map)
-        for bit_pos, name in bit_map.items():
+        for bit_pos, (name, _high, _low) in bit_map.items():
             key = f"{prefix}_{bit_pos}"
+            active, state_text = bits[name]
+
             if key in self.status_bit_labels:
-                active = bits[name]
                 self.status_bit_labels[key].config(
+                    text=f"{name}\n{state_text}",
                     fg=COLOR_ACTIVE if active else COLOR_INACTIVE)
 
             # Log state changes
@@ -187,8 +224,7 @@ class FuelGaugeDashboard(tk.Tk):
                 prev = self.prev_status.get(log_key)
                 if prev is not None and prev != active:
                     ts = datetime.now().isoformat(timespec='milliseconds')
-                    state_str = "ACTIVE" if active else "INACTIVE"
-                    self.log_entries.append(f"{ts}  {log_key:<20s}  -> {state_str}")
+                    self.log_entries.append(f"{ts}  {log_key:<20s}  -> {state_text}")
                 self.prev_status[log_key] = active
 
     def refresh_ports(self):
@@ -227,7 +263,8 @@ class FuelGaugeDashboard(tk.Tk):
         self.save_config(config)
             
         self.bp = BusPirate(port)
-        success, msg = self.bp.connect()
+        clock_khz = int(self.clock_var.get() or 10)
+        success, msg = self.bp.connect(clock_khz=clock_khz)
         
         if success:
             self.btn_connect.config(text="Disconnect")
@@ -255,6 +292,46 @@ class FuelGaugeDashboard(tk.Tk):
         self.bq.reset()
         # Resume polling after a brief delay to let the device restart
         self.after(2000, self._resume_polling)
+
+    def clear_pf_faults(self):
+        """Send a PF_RESET command to the BQ28Z620."""
+        if not self.bq:
+            return
+
+        self.is_polling = False
+        self.bq.pf_reset()
+        # Resume polling after a brief delay
+        self.after(2000, self._resume_polling)
+
+    def toggle_chg_fet(self):
+        """Send a CHG_FET_TOGGLE command."""
+        if not self.bq: return
+        self.is_polling = False
+        self.bq.toggle_chg_fet()
+        self.after(500, self._resume_polling)
+
+    def toggle_dsg_fet(self):
+        """Send a DSG_FET_TOGGLE command."""
+        if not self.bq: return
+        self.is_polling = False
+        self.bq.toggle_dsg_fet()
+        self.after(500, self._resume_polling)
+
+    def set_clock(self):
+        """Save the clock rate and reconnect with the new setting."""
+        try:
+            clock_khz = int(self.clock_var.get())
+        except ValueError:
+            messagebox.showerror("Invalid", "Clock rate must be a number in kHz.")
+            return
+
+        config = self.load_config()
+        config["clock_khz"] = clock_khz
+        self.save_config(config)
+
+        if self.bp and self.bp.connected:
+            self.disconnect()
+            self.after(500, self.connect)
 
     def _resume_polling(self):
         """Resume data polling after a reset."""
@@ -334,6 +411,18 @@ class FuelGaugeDashboard(tk.Tk):
             if self.show_safety_status.get():
                 val, hex_str = self.bq.get_safety_status()
                 self._update_bit_labels("ss", val, SAFETY_STATUS_BITS, hex_str)
+                self.update()
+                time.sleep(delay)
+
+            if self.show_pf_alert.get():
+                val, hex_str = self.bq.get_pf_alert()
+                self._update_bit_labels("pfa", val, PF_ALERT_BITS, hex_str)
+                self.update()
+                time.sleep(delay)
+
+            if self.show_pf_status.get():
+                val, hex_str = self.bq.get_pf_status()
+                self._update_bit_labels("pfs", val, PF_STATUS_BITS, hex_str)
                 self.update()
                 time.sleep(delay)
                 

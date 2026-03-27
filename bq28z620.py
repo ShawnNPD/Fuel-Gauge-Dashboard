@@ -2,26 +2,78 @@ import time
 
 
 # Bit definitions sourced from BQ28Z620-Status-Regs.csv
-# BatteryStatus register 0x16 (16-bit, SBS standard layout)
+# Format: {bit_position: (abbreviation, high_state_meaning, low_state_meaning)}
+
+# BatteryStatus register 0x0A (16-bit, SBS standard layout)
 BATTERY_STATUS_BITS = {
-    15: "OCA",  14: "TCA",  12: "OTA",  11: "TDA",
-     9: "RCA",   8: "RTA",   7: "INIT",   6: "DSG",
-     5: "FC",    4: "FD",    3: "EC3",    2: "EC2",
-     1: "EC1",   0: "EC0",
+    15: ("OCA",  "Over Charge Alarm",          "No Alarm"),
+    14: ("TCA",  "Terminate Charge Alarm",     "No Alarm"),
+    12: ("OTA",  "Over Temp Alarm",            "No Alarm"),
+    11: ("TDA",  "Terminate Discharge Alarm",  "No Alarm"),
+     9: ("RCA",  "Remaining Capacity Alarm",   "No Alarm"),
+     8: ("RTA",  "Remaining Time Alarm",       "No Alarm"),
+     7: ("INIT", "Initialized",                "Not Initialized"),
+     6: ("DSG",  "Discharging",                "Charging"),
+     5: ("FC",   "Fully Charged",              "Not Full"),
+     4: ("FD",   "Fully Depleted",             "OK"),
+     3: ("EC3",  "Error",                      "OK"),
+     2: ("EC2",  "Error",                      "OK"),
+     1: ("EC1",  "Error",                      "OK"),
+     0: ("EC0",  "Error",                      "OK"),
 }
 
 # SafetyAlert MAC 0x0050 (32-bit: bytes A+B = bits 0-15, C+D = bits 16-31)
 SAFETY_ALERT_BITS = {
-     2: "CUV",   3: "COV",   4: "OCC",   5: "OCD",
-     6: "AOLD",  7: "ASCC",  8: "ASCD", 10: "OTC",  11: "OTD",
-    20: "PTOS", 21: "CTOS", 26: "UTC",  27: "UTD",
+     2: ("CUV",  "Cell Undervoltage",          "Not Detected"),
+     3: ("COV",  "Cell Overvoltage",           "Not Detected"),
+     4: ("OCC",  "Overcurrent Charge",         "Not Detected"),
+     5: ("OCD",  "Overcurrent Discharge",      "Not Detected"),
+     6: ("AOLD", "Overload Discharge",         "Not Detected"),
+     7: ("ASCC", "Short-Circuit Charge",       "Not Detected"),
+     8: ("ASCD", "Short-Circuit Discharge",    "Not Detected"),
+    10: ("OTC",  "Overtemp Charge",            "Not Detected"),
+    11: ("OTD",  "Overtemp Discharge",         "Not Detected"),
+    20: ("PTOS", "Precharge Timeout Suspend",  "Not Detected"),
+    21: ("CTOS", "Charge Timeout Suspend",     "Not Detected"),
+    26: ("UTC",  "Undertemp Charge",           "Not Detected"),
+    27: ("UTD",  "Undertemp Discharge",        "Not Detected"),
 }
 
-# SafetyStatus MAC 0x0051 (32-bit: same layout, slightly different names)
+# SafetyStatus MAC 0x0051 (32-bit: same bit layout as SafetyAlert)
 SAFETY_STATUS_BITS = {
-     2: "CUV",   3: "COV",   4: "OCC",   5: "OCD",
-     6: "AOLD",  7: "ASCC",  8: "ASCD", 10: "OTC",  11: "OTD",
-    20: "PTO",  21: "CTO",  26: "UTC",  27: "UTD",
+     2: ("CUV",  "Cell Undervoltage",          "Not Detected"),
+     3: ("COV",  "Cell Overvoltage",           "Not Detected"),
+     4: ("OCC",  "Overcurrent Charge",         "Not Detected"),
+     5: ("OCD",  "Overcurrent Discharge",      "Not Detected"),
+     6: ("AOLD", "Overload Discharge",         "Not Detected"),
+     7: ("ASCC", "Short-Circuit Charge",       "Not Detected"),
+     8: ("ASCD", "Short-Circuit Discharge",    "Not Detected"),
+    10: ("OTC",  "Overtemp Charge",            "Not Detected"),
+    11: ("OTD",  "Overtemp Discharge",         "Not Detected"),
+    20: ("PTO",  "Precharge Timeout",          "Not Detected"),
+    21: ("CTO",  "Charge Timeout",             "Not Detected"),
+    26: ("UTC",  "Undertemp Charge",           "Not Detected"),
+    27: ("UTD",  "Undertemp Discharge",        "Not Detected"),
+}
+
+# PFAlert MAC 0x0052 (32-bit: bytes A+B = bits 0-15, C+D = bits 16-31)
+PF_ALERT_BITS = {
+     0: ("SUV",   "Safety Cell Undervoltage",   "Not Detected"),
+     1: ("SOV",   "Safety Cell Overvoltage",    "Not Detected"),
+     4: ("VIMR",  "Voltage Imbalance Rest",     "Not Detected"),
+     5: ("VIMA",  "Voltage Imbalance Active",   "Not Detected"),
+    16: ("CFETF", "Charge FET Failure",         "Not Detected"),
+    17: ("DFETF", "Discharge FET Failure",      "Not Detected"),
+}
+
+# PFStatus MAC 0x0053 (32-bit: same layout as PFAlert)
+PF_STATUS_BITS = {
+     0: ("SUV",   "Safety Cell Undervoltage",   "Not Detected"),
+     1: ("SOV",   "Safety Cell Overvoltage",    "Not Detected"),
+     4: ("VIMR",  "Voltage Imbalance Rest",     "Not Detected"),
+     5: ("VIMA",  "Voltage Imbalance Active",   "Not Detected"),
+    16: ("CFETF", "Charge FET Failure",         "Not Detected"),
+    17: ("DFETF", "Discharge FET Failure",      "Not Detected"),
 }
 
 
@@ -123,21 +175,35 @@ class BQ28z620:
         """
         return self.bp.write_register(self.addr_w, 0x00, [0x41, 0x00])
 
-    def read_mac_subcommand(self, subcmd, length=4):
+    def read_mac_subcommand(self, subcmd):
         """
         Reads data from a MAC subcommand.
-        1. Writes the 2-byte subcommand (little-endian) to ManufacturerAccess (0x00).
+        1. Writes the 2-byte subcommand (little-endian) to MACSubcmd register (0x3E).
         2. Waits briefly for the device to populate MACData.
-        3. Reads 'length' bytes from MACData register (0x23).
-        Returns the raw bytes as a list, or None on failure.
+        3. Reads MACDataLength from register 0x61 to determine response size.
+        4. Reads that exact number of bytes from MACData register (0x40).
+        Returns the data bytes as a list, or None on failure.
         """
         low = subcmd & 0xFF
         high = (subcmd >> 8) & 0xFF
-        success = self.bp.write_register(self.addr_w, 0x00, [low, high])
+        success = self.bp.write_register(self.addr_w, 0x3E, [low, high])
         if not success:
             return None
         time.sleep(0.05)
-        data = self.bp.read_register(self.addr_w, self.addr_r, 0x23, length=length)
+
+        # Read MACDataLength from 0x61
+        len_data = self.bp.read_register(self.addr_w, self.addr_r, 0x61, length=1)
+        if not len_data:
+            return None
+        mac_data_len = len_data[0]
+        if mac_data_len == 0:
+            return None
+
+        # Read data from MACData register 0x40
+        data = self.bp.read_register(self.addr_w, self.addr_r, 0x40, length=mac_data_len)
+        if not data or len(data) < mac_data_len:
+            return None
+
         return data
 
     def get_battery_status(self):
@@ -149,32 +215,73 @@ class BQ28z620:
 
     def get_safety_alert(self):
         """
-        Reads SafetyAlert via MAC subcommand 0x0050 (4 bytes / uint32).
+        Reads SafetyAlert via MAC subcommand 0x0050.
         Returns (raw_value, hex_string) or (None, None).
         """
-        data = self.read_mac_subcommand(0x0050, length=4)
-        if data and len(data) == 4:
-            val = self.bytes_to_uint_le(data)
+        data = self.read_mac_subcommand(0x0050)
+        if data and len(data) >= 4:
+            val = self.bytes_to_uint_le(data[:4])
             return val, f"0x{val:08X}"
         return None, None
 
     def get_safety_status(self):
         """
-        Reads SafetyStatus via MAC subcommand 0x0051 (4 bytes / uint32).
+        Reads SafetyStatus via MAC subcommand 0x0051.
         Returns (raw_value, hex_string) or (None, None).
         """
-        data = self.read_mac_subcommand(0x0051, length=4)
-        if data and len(data) == 4:
-            val = self.bytes_to_uint_le(data)
+        data = self.read_mac_subcommand(0x0051)
+        if data and len(data) >= 4:
+            val = self.bytes_to_uint_le(data[:4])
             return val, f"0x{val:08X}"
         return None, None
+
+    def get_pf_alert(self):
+        """
+        Reads PFAlert via MAC subcommand 0x0052.
+        Returns (raw_value, hex_string) or (None, None).
+        """
+        data = self.read_mac_subcommand(0x0052)
+        if data and len(data) >= 4:
+            val = self.bytes_to_uint_le(data[:4])
+            return val, f"0x{val:08X}"
+        return None, None
+
+    def get_pf_status(self):
+        """
+        Reads PFStatus via MAC subcommand 0x0053.
+        Returns (raw_value, hex_string) or (None, None).
+        """
+        data = self.read_mac_subcommand(0x0053)
+        if data and len(data) >= 4:
+            val = self.bytes_to_uint_le(data[:4])
+            return val, f"0x{val:08X}"
+        return None, None
+
+    def pf_reset(self):
+        """
+        Sends PF_RESET MAC subcommand (0x0029) to clear permanent failures.
+        """
+        return self.bp.write_register(self.addr_w, 0x3E, [0x29, 0x00])
+
+    def toggle_chg_fet(self):
+        """Toggle the Charge FET via MAC subcommand 0x001F."""
+        return self.bp.write_register(self.addr_w, 0x3E, [0x1F, 0x00])
+
+    def toggle_dsg_fet(self):
+        """Toggle the Discharge FET via MAC subcommand 0x0020."""
+        return self.bp.write_register(self.addr_w, 0x3E, [0x20, 0x00])
 
     @staticmethod
     def parse_bits(raw_value, bit_map):
         """
-        Given a raw integer value and a bit_map {bit_position: name},
-        returns a dict of {name: bool} indicating whether each bit is set.
+        Given a raw integer value and a bit_map {bit_position: (name, high_text, low_text)},
+        returns a dict of {name: (is_active, display_text)}.
         """
         if raw_value is None:
-            return {name: False for name in bit_map.values()}
-        return {name: bool(raw_value & (1 << bit)) for bit, name in bit_map.items()}
+            return {entry[0]: (False, entry[2])
+                    for entry in bit_map.values()}
+        result = {}
+        for bit, (name, high_text, low_text) in bit_map.items():
+            active = bool(raw_value & (1 << bit))
+            result[name] = (active, high_text if active else low_text)
+        return result

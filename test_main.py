@@ -9,6 +9,7 @@ class DummyTk:
     def mainloop(self): pass
     def update(self): pass
     def destroy(self): pass
+    def bind(self, *args): pass
 
 class DummyStringVar:
     def __init__(self, *args, **kwargs): self.val = ""
@@ -32,7 +33,7 @@ sys.modules['tkinter.messagebox'] = MagicMock()
 import pytest
 import os
 import json
-from main import FuelGaugeDashboard
+from main import FuelGaugeDashboard, POLL_RATE
 
 @pytest.fixture
 def app():
@@ -98,8 +99,10 @@ def test_poll_data(mock_sleep, app):
     app.show_battery_status.set(False)
     app.show_safety_alert.set(False)
     app.show_safety_status.set(False)
+    app.show_pf_alert.set(False)
+    app.show_pf_status.set(False)
     with patch.object(app, 'after') as mock_after:
         app.poll_data()
         app.lbl_voltage.config.assert_any_call(text="3500 mV  (0x0DAC)")
         app.lbl_current.config.assert_any_call(text="-500 mA  (0xFE0C)")
-        mock_after.assert_called_once_with(100, app.poll_data)
+        mock_after.assert_called_once_with(POLL_RATE, app.poll_data)

@@ -76,19 +76,21 @@ def test_get_current():
 
 def test_parse_bits_all_clear():
     result = BQ28z620.parse_bits(0x0000, BATTERY_STATUS_BITS)
-    assert all(v is False for v in result.values())
+    for name, (active, text) in result.items():
+        assert active is False
 
 def test_parse_bits_some_set():
     # Set bit 6 (DSG) and bit 5 (FC)
     result = BQ28z620.parse_bits(0x0060, BATTERY_STATUS_BITS)
-    assert result["DSG"] is True
-    assert result["FC"] is True
-    assert result["OCA"] is False
-    assert result["FD"] is False
+    assert result["DSG"] == (True, "Discharging")
+    assert result["FC"] == (True, "Fully Charged")
+    assert result["OCA"] == (False, "No Alarm")
+    assert result["FD"] == (False, "OK")
 
 def test_parse_bits_none_value():
     result = BQ28z620.parse_bits(None, BATTERY_STATUS_BITS)
-    assert all(v is False for v in result.values())
+    for name, (active, text) in result.items():
+        assert active is False
 
 def test_get_battery_status():
     mock_bp = MagicMock()
@@ -104,22 +106,24 @@ def test_get_battery_status():
 def test_read_mac_subcommand(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
-    mock_bp.read_register.return_value = [0x00, 0x00, 0x00, 0x00]
+    mock_bp.read_register.side_effect = [
+        [0x04],                              # MACDataLength from 0x61 = 4
+        [0x00, 0x00, 0x00, 0x00],            # 4 data bytes from 0x40
+    ]
     bq = BQ28z620(mock_bp)
 
-    data = bq.read_mac_subcommand(0x0050, length=4)
-    # Verify write: subcmd 0x0050 -> [0x50, 0x00]
-    mock_bp.write_register.assert_called_with(0xAA, 0x00, [0x50, 0x00])
-    # Verify read from MACData 0x23
-    mock_bp.read_register.assert_called_with(0xAA, 0xAB, 0x23, length=4)
+    data = bq.read_mac_subcommand(0x0050)
+    mock_bp.write_register.assert_called_with(0xAA, 0x3E, [0x50, 0x00])
     assert data == [0x00, 0x00, 0x00, 0x00]
 
 @patch('bq28z620.time.sleep')
 def test_get_safety_alert(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
-    # Bit 3 = COV set in byte A
-    mock_bp.read_register.return_value = [0x08, 0x00, 0x00, 0x00]
+    mock_bp.read_register.side_effect = [
+        [0x04],                              # MACDataLength = 4
+        [0x08, 0x00, 0x00, 0x00],            # COV bit set
+    ]
     bq = BQ28z620(mock_bp)
 
     val, hex_str = bq.get_safety_alert()
@@ -130,12 +134,64 @@ def test_get_safety_alert(mock_sleep):
 def test_get_safety_status(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
-    mock_bp.read_register.return_value = [0x04, 0x00, 0x00, 0x00]  # Bit 2 = CUV
+    mock_bp.read_register.side_effect = [
+        [0x04],                              # MACDataLength = 4
+        [0x04, 0x00, 0x00, 0x00],            # CUV bit set
+    ]
     bq = BQ28z620(mock_bp)
 
     val, hex_str = bq.get_safety_status()
     assert val == 0x00000004
     assert hex_str == "0x00000004"
+
+@patch('bq28z620.time.sleep')
+def test_get_pf_alert(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = True
+    mock_bp.read_register.side_effect = [
+        [0x04],                              # MACDataLength = 4
+        [0x01, 0x00, 0x00, 0x00],            # Bit 0 = SUV set
+    ]
+    bq = BQ28z620(mock_bp)
+
+    val, hex_str = bq.get_pf_alert()
+    assert val == 0x00000001
+    assert hex_str == "0x00000001"
+
+@patch('bq28z620.time.sleep')
+def test_get_pf_status(mock_sleep):
+    mock_bp = MagicMock()
+    mock_bp.write_register.return_value = True
+    mock_bp.read_register.side_effect = [
+        [0x04],                              # MACDataLength = 4
+        [0x10, 0x00, 0x00, 0x00],            # Bit 4 = VIMR set
+    ]
+    bq = BQ28z620(mock_bp)
+
+    val, hex_str = bq.get_pf_status()
+    assert val == 0x00000010
+    assert hex_str == "0x00000010"
+
+def test_pf_reset():
+    mock_bp = MagicMock()
+    bq = BQ28z620(mock_bp)
+    bq.pf_reset()
+    # Should write [0x29, 0x00] to 0x3E
+    mock_bp.write_register.assert_called_with(0xAA, 0x3E, [0x29, 0x00])
+
+def test_toggle_chg_fet():
+    mock_bp = MagicMock()
+    bq = BQ28z620(mock_bp)
+    bq.toggle_chg_fet()
+    # Should write [0x1F, 0x00] to 0x3E
+    mock_bp.write_register.assert_called_with(0xAA, 0x3E, [0x1F, 0x00])
+
+def test_toggle_dsg_fet():
+    mock_bp = MagicMock()
+    bq = BQ28z620(mock_bp)
+    bq.toggle_dsg_fet()
+    # Should write [0x20, 0x00] to 0x3E
+    mock_bp.write_register.assert_called_with(0xAA, 0x3E, [0x20, 0x00])
 
 @patch('bq28z620.time.sleep')
 def test_read_mac_subcommand_write_failure(mock_sleep):

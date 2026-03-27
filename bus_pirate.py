@@ -10,7 +10,7 @@ class BusPirate:
         self.serial = None
         self.connected = False
 
-    def connect(self):
+    def connect(self, clock_khz=10):
         try:
             for attempt in range(5):
                 try:
@@ -35,19 +35,22 @@ class BusPirate:
             self.send_command("5")
             # 3. Discard previous broken settings (which were stuck at 0kHz)
             self.send_command("n")
-            # 4. Explicitly select 100kHz
-            self.send_command("10")
+            # 4. Set clock rate
+            self.send_command(str(clock_khz))
             time.sleep(0.5)
         
 
             # Bus Pirate 5/6 settings for I2C usually default to 400kHz.
             
-            # Ensure Bus Pirate power supply (w) and Pullups (p) are OFF
-            # so the target board's 1.8V supply and pullups are used.
-            self.send_command("w")
-            time.sleep(0.1)
-            self.send_command("p")
-            time.sleep(0.1)
+            # Enable Bus Pirate 1.8V power supply and Pullups
+            # self.send_command("W")
+            # time.sleep(0.1)
+            # self.send_command("1.8")# Enable power
+            # time.sleep(0.1)
+            # self.send_command("\r")
+            # time.sleep(0.1)
+            # self.send_command("P") # Enable pullups
+            # time.sleep(0.1)
 
             self.connected = True
             return True, "Connected successfully"
@@ -91,9 +94,9 @@ class BusPirate:
 
     def read_register(self, write_addr, read_addr, reg, length=2):
         """
-        Executes an I2C write/read sequence:
-        [ write_addr reg [ read_addr r:length ]
-        E.g.: [ 0xAA 0x1D [ 0xAB r:2 ]
+        Executes an I2C write then read using Stop-Start (not Repeated Start):
+        [ write_addr reg ] [ read_addr r:length ]
+        E.g.: [ 0xAA 0x1D ] [ 0xAB r:2 ]
         """
         if not self.connected:
             return None
