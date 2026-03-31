@@ -19,7 +19,7 @@ class FuelGaugeDashboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("BQ28Z620 Fuel Gauge Dashboard")
-        self.geometry("850x1024")
+        self.geometry("850x1150")
         
         self.bp = None
         self.bq = None
@@ -44,7 +44,7 @@ class FuelGaugeDashboard(tk.Tk):
         self.rebuild_status_display()
 
         # Spacebar toggles connect/disconnect
-        self.bind("<space>", lambda e: self.toggle_connection())
+        # self.bind("<space>", lambda e: self.toggle_connection())
         
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -99,6 +99,39 @@ class FuelGaugeDashboard(tk.Tk):
         ttk.Label(frame_bot, text="Current:", font=("Helvetica", 14, "bold")).grid(row=1, column=0, sticky="w", padx=20, pady=20)
         self.lbl_current = ttk.Label(frame_bot, text="---", font=("Helvetica", 14))
         self.lbl_current.grid(row=1, column=1, sticky="w", padx=20, pady=20)
+
+        ttk.Separator(frame_bot, orient="vertical").grid(row=0, column=2, rowspan=2, sticky="ns", padx=20, pady=10)
+        frame_bot.columnconfigure(3, weight=1)
+
+        # Custom I2C Tools
+        frame_custom = ttk.Frame(frame_bot)
+        frame_custom.grid(row=0, column=4, rowspan=2, padx=10, pady=10, sticky="ne")
+        
+        ttk.Label(frame_custom, text="Raw Command (Hex):", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        write_frame = ttk.Frame(frame_custom)
+        write_frame.pack(fill="x", pady=(0, 10))
+        self.custom_write_var = tk.StringVar()
+        ttk.Entry(write_frame, textvariable=self.custom_write_var, width=15).pack(side="left")
+        ttk.Button(write_frame, text="Send", command=self.send_custom_write).pack(side="left", padx=5)
+        
+        ttk.Label(frame_custom, text="Raw Read (Hex Reg, Dec Bytes):", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        read_frame = ttk.Frame(frame_custom)
+        read_frame.pack(fill="x")
+        ttk.Label(read_frame, text="Reg:").pack(side="left")
+        self.custom_read_reg_var = tk.StringVar()
+        ttk.Entry(read_frame, textvariable=self.custom_read_reg_var, width=5).pack(side="left", padx=(0, 5))
+        ttk.Label(read_frame, text="Bytes:").pack(side="left")
+        self.custom_read_len_var = tk.StringVar(value="2")
+        ttk.Entry(read_frame, textvariable=self.custom_read_len_var, width=5).pack(side="left", padx=(0, 5))
+        ttk.Button(read_frame, text="Read", command=self.send_custom_read).pack(side="left", padx=5)
+        
+        result_frame = ttk.Frame(frame_custom)
+        result_frame.pack(fill="x", pady=5)
+        ttk.Label(result_frame, text="Result:", font=("Helvetica", 10, "bold")).pack(side="left")
+        
+        self.custom_result_var = tk.StringVar(value="---")
+        self.entry_custom_result = ttk.Entry(result_frame, textvariable=self.custom_result_var, font=("Consolas", 10), state="readonly", width=30)
+        self.entry_custom_result.pack(side="left", padx=5, fill="x", expand=True)
 
         # Commands
         frame_cmd = ttk.LabelFrame(self, text="Commands")
@@ -315,6 +348,66 @@ class FuelGaugeDashboard(tk.Tk):
         if not self.bq: return
         self.is_polling = False
         self.bq.toggle_dsg_fet()
+        self.after(500, self._resume_polling)
+
+    def send_custom_write(self):
+        if not self.bq or not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Not connected")
+            return
+            
+        hex_str = self.custom_write_var.get().strip()
+        if not hex_str: return
+        
+        try:
+            parts = [int(p, 16) for p in hex_str.split()]
+        except ValueError:
+            messagebox.showerror("Error", "Invalid hex format. Use e.g. '1f 00'")
+            return
+            
+        if not parts: return
+        
+        reg = parts[0]
+        data = parts[1:]
+        
+        self.is_polling = False
+        self.bp.write_register(self.bq.addr_w, reg, data)
+        self.custom_result_var.set(f"Sent write: {hex_str.upper()}")
+        self.after(500, self._resume_polling)
+
+    def send_custom_read(self):
+        if not self.bq or not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Not connected")
+            return
+            
+        reg_str = self.custom_read_reg_var.get().strip()
+        len_str = self.custom_read_len_var.get().strip()
+        
+        if not reg_str or not len_str: return
+        
+        try:
+            reg = int(reg_str, 16)
+            length = int(len_str)
+        except ValueError:
+            messagebox.showerror("Error", "Invalid format (Hex Reg, Dec Bytes)")
+            return
+            
+        pre_write_bytes = None
+        write_hex_str = self.custom_write_var.get().strip()
+        if write_hex_str:
+            try:
+                pre_write_bytes = [int(p, 16) for p in write_hex_str.split()]
+            except ValueError:
+                messagebox.showerror("Error", "Invalid hex in write field.")
+                return
+
+        self.is_polling = False
+        data = self.bp.read_register(self.bq.addr_w, self.bq.addr_r, reg, length=length, pre_write_bytes=pre_write_bytes)
+        if data is not None:
+            res_str = " ".join([f"{b:02X}" for b in data])
+            self.custom_result_var.set(res_str)
+        else:
+            self.custom_result_var.set("Read error")
+            
         self.after(500, self._resume_polling)
 
     def set_clock(self):

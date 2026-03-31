@@ -43,14 +43,14 @@ class BusPirate:
             # Bus Pirate 5/6 settings for I2C usually default to 400kHz.
             
             # Enable Bus Pirate 1.8V power supply and Pullups
-            # self.send_command("W")
-            # time.sleep(0.1)
-            # self.send_command("1.8")# Enable power
-            # time.sleep(0.1)
-            # self.send_command("\r")
-            # time.sleep(0.1)
-            # self.send_command("P") # Enable pullups
-            # time.sleep(0.1)
+            self.send_command("W")
+            time.sleep(0.1)
+            self.send_command("1.8")# Enable power
+            time.sleep(0.1)
+            self.send_command("\r")
+            time.sleep(0.1)
+            self.send_command("P") # Enable pullups
+            time.sleep(0.1)
 
             self.connected = True
             return True, "Connected successfully"
@@ -92,7 +92,7 @@ class BusPirate:
             return response
         return ""
 
-    def read_register(self, write_addr, read_addr, reg, length=2):
+    def read_register(self, write_addr, read_addr, reg, length=2, pre_write_bytes=None, pre_write_delay_ms=50):
         """
         Executes an I2C write then read using Stop-Start (not Repeated Start):
         [ write_addr reg ] [ read_addr r:length ]
@@ -104,9 +104,17 @@ class BusPirate:
         # Flush input buffer to avoid stale data
         self.serial.reset_input_buffer()
         
+        response = ""
+        if pre_write_bytes:
+            pre_str = " ".join([hex(b) for b in pre_write_bytes])
+            write_cmd = f"[ {hex(write_addr)} {pre_str} ]"
+            response += self.send_command(write_cmd)
+            time.sleep(pre_write_delay_ms / 1000.0)
+            self.serial.reset_input_buffer()
+            
         # Ensure safe STOP-START syntax is used because the BP firmware definitively drops the bus on Repeated Starts
         cmd = f"[ {hex(write_addr)} {hex(reg)} ] [ {hex(read_addr)} r:{length} ]"
-        response = self.send_command(cmd)
+        response += self.send_command(cmd)
 
         if reg == 0x1D or reg == 0x15:
             print(f"DEBUG READ {hex(reg)}:\n{response}\n---")
