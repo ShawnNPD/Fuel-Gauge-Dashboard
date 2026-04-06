@@ -6,7 +6,7 @@ import json
 import os
 from datetime import datetime
 from bus_pirate import BusPirate
-from bq28z620 import BQ28z620, BATTERY_STATUS_BITS, SAFETY_ALERT_BITS, SAFETY_STATUS_BITS, PF_ALERT_BITS, PF_STATUS_BITS
+from bq28z620 import BQ28z620, BATTERY_STATUS_BITS, SAFETY_ALERT_BITS, SAFETY_STATUS_BITS, PF_ALERT_BITS, PF_STATUS_BITS, OPERATION_STATUS_BITS
 
 CONFIG_FILE = "config.json"
 POLL_RATE = 5  # ms
@@ -19,11 +19,16 @@ class FuelGaugeDashboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("BQ28Z620 Fuel Gauge Dashboard")
-        self.geometry("850x1150")
+        self.geometry("1370x1024")
+        self.pack_propagate(False)
         
         self.bp = None
         self.bq = None
         self.is_polling = False
+        self.power_enabled = True
+
+        # Toggle vars for polling
+        self.poll_voltage_current = tk.BooleanVar(value=True)
 
         # Toggle vars for status registers
         self.show_battery_status = tk.BooleanVar(value=True)
@@ -31,6 +36,7 @@ class FuelGaugeDashboard(tk.Tk):
         self.show_safety_status = tk.BooleanVar(value=True)
         self.show_pf_alert = tk.BooleanVar(value=True)
         self.show_pf_status = tk.BooleanVar(value=True)
+        self.show_operation_status = tk.BooleanVar(value=True)
 
         # Label references for status bit displays
         self.status_bit_labels = {}
@@ -79,6 +85,9 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_connect = ttk.Button(frame_top, text="Connect", command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=5, pady=5)
 
+        self.btn_power = ttk.Button(frame_top, text="Disable Power", command=self.toggle_power)
+        self.btn_power.pack(side="left", padx=5, pady=5)
+
         ttk.Separator(frame_top, orient="vertical").pack(side="left", padx=5, fill="y", pady=5)
 
         ttk.Label(frame_top, text="I2C Clock (kHz):").pack(side="left", padx=5, pady=5)
@@ -125,13 +134,27 @@ class FuelGaugeDashboard(tk.Tk):
         ttk.Entry(read_frame, textvariable=self.custom_read_len_var, width=5).pack(side="left", padx=(0, 5))
         ttk.Button(read_frame, text="Read", command=self.send_custom_read).pack(side="left", padx=5)
         
+        ttk.Separator(frame_custom, orient="horizontal").pack(fill="x", pady=10)
+        
+        ttk.Label(frame_custom, text="MACSubcmd (Hex):", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        mac_frame = ttk.Frame(frame_custom)
+        mac_frame.pack(fill="x", pady=(0, 10))
+        self.mac_subcmd_var = tk.StringVar()
+        ttk.Entry(mac_frame, textvariable=self.mac_subcmd_var, width=15).pack(side="left")
+        ttk.Button(mac_frame, text="Send", command=self.send_mac_subcmd).pack(side="left", padx=5)
+        ttk.Button(mac_frame, text="Read", command=self.read_mac_subcmd).pack(side="left", padx=5)
+
+        ttk.Separator(frame_custom, orient="horizontal").pack(fill="x", pady=5)
+
         result_frame = ttk.Frame(frame_custom)
         result_frame.pack(fill="x", pady=5)
         ttk.Label(result_frame, text="Result:", font=("Helvetica", 10, "bold")).pack(side="left")
         
         self.custom_result_var = tk.StringVar(value="---")
-        self.entry_custom_result = ttk.Entry(result_frame, textvariable=self.custom_result_var, font=("Consolas", 10), state="readonly", width=30)
-        self.entry_custom_result.pack(side="left", padx=5, fill="x", expand=True)
+        self.custom_result_var.trace_add("write", self._on_result_changed)
+        
+        self.text_custom_result = tk.Text(result_frame, font=("Consolas", 10), height=3, width=30, wrap="word", state="disabled")
+        self.text_custom_result.pack(side="left", padx=5, fill="both", expand=True)
 
         # Commands
         frame_cmd = ttk.LabelFrame(self, text="Commands")
@@ -153,28 +176,91 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_toggle_dsg.pack(side="left", padx=10, pady=5)
 
         # Status Register Toggles
-        frame_toggles = ttk.LabelFrame(self, text="Status Registers")
+        frame_toggles = ttk.LabelFrame(self, text="Polling Toggles")
         frame_toggles.pack(padx=10, pady=5, fill="x")
 
+        self.toggle_all_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame_toggles, text="All",
+                        variable=self.toggle_all_var,
+                        command=self.on_toggle_all).pack(side="left", padx=10, pady=5)
+
+        ttk.Separator(frame_toggles, orient="vertical").pack(side="left", padx=5, fill="y", pady=5)
+
+        ttk.Checkbutton(frame_toggles, text="Voltage & Current",
+                        variable=self.poll_voltage_current,
+                        command=self.on_vc_toggle).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="Battery Status",
                         variable=self.show_battery_status,
-                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
+        ttk.Checkbutton(frame_toggles, text="Op Status",
+                        variable=self.show_operation_status,
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="Safety Alert",
                         variable=self.show_safety_alert,
-                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="Safety Status",
                         variable=self.show_safety_status,
-                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="PF Alert",
                         variable=self.show_pf_alert,
-                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
         ttk.Checkbutton(frame_toggles, text="PF Status",
                         variable=self.show_pf_status,
-                        command=self.rebuild_status_display).pack(side="left", padx=10, pady=5)
+                        command=self.on_individual_toggle).pack(side="left", padx=10, pady=5)
 
         # Scrollable status display area
         self.status_frame = ttk.Frame(self)
         self.status_frame.pack(padx=10, pady=5, fill="both", expand=True)
+
+    def on_toggle_all(self):
+        state = self.toggle_all_var.get()
+        self.poll_voltage_current.set(state)
+        self.show_battery_status.set(state)
+        self.show_safety_alert.set(state)
+        self.show_safety_status.set(state)
+        self.show_pf_alert.set(state)
+        self.show_pf_status.set(state)
+        self.show_operation_status.set(state)
+        self.rebuild_status_display()
+
+    def on_vc_toggle(self):
+        self._sync_toggle_all_state()
+
+    def on_individual_toggle(self):
+        self._sync_toggle_all_state()
+        self.rebuild_status_display()
+
+    def _sync_toggle_all_state(self):
+        any_checked = any([
+            self.poll_voltage_current.get(),
+            self.show_battery_status.get(),
+            self.show_operation_status.get(),
+            self.show_safety_alert.get(),
+            self.show_safety_status.get(),
+            self.show_pf_alert.get(),
+            self.show_pf_status.get()
+        ])
+        all_checked = all([
+            self.poll_voltage_current.get(),
+            self.show_battery_status.get(),
+            self.show_operation_status.get(),
+            self.show_safety_alert.get(),
+            self.show_safety_status.get(),
+            self.show_pf_alert.get(),
+            self.show_pf_status.get()
+        ])
+        
+        if not any_checked:
+            self.toggle_all_var.set(False)
+        elif all_checked:
+            self.toggle_all_var.set(True)
+
+    def _on_result_changed(self, *args):
+        text = self.custom_result_var.get()
+        self.text_custom_result.config(state="normal")
+        self.text_custom_result.delete("1.0", tk.END)
+        self.text_custom_result.insert("1.0", text)
+        self.text_custom_result.config(state="disabled")
 
     def rebuild_status_display(self):
         """Rebuild the status bit display based on which registers are toggled on."""
@@ -184,36 +270,29 @@ class FuelGaugeDashboard(tk.Tk):
         self.status_bit_labels.clear()
 
         row = 0
-        if self.show_battery_status.get():
-            row = self._build_register_section(
-                "Battery Status (0x0A)", BATTERY_STATUS_BITS, "bat", row)
-
-        if self.show_safety_alert.get():
-            row = self._build_register_section(
-                "Safety Alert (0x0050)", SAFETY_ALERT_BITS, "sa", row)
-
-        if self.show_safety_status.get():
-            row = self._build_register_section(
-                "Safety Status (0x0051)", SAFETY_STATUS_BITS, "ss", row)
-
-        if self.show_pf_alert.get():
-            row = self._build_register_section(
-                "PF Alert (0x0052)", PF_ALERT_BITS, "pfa", row)
-
-        if self.show_pf_status.get():
-            row = self._build_register_section(
-                "PF Status (0x0053)", PF_STATUS_BITS, "pfs", row)
+        row = self._build_register_section(
+            "Battery Status (0x0A)", BATTERY_STATUS_BITS, "bat", row)
+        row = self._build_register_section(
+            "Operation Status (0x0054)", OPERATION_STATUS_BITS, "ops", row)
+        row = self._build_register_section(
+            "Safety Alert (0x0050)", SAFETY_ALERT_BITS, "sa", row)
+        row = self._build_register_section(
+            "Safety Status (0x0051)", SAFETY_STATUS_BITS, "ss", row)
+        row = self._build_register_section(
+            "PF Alert (0x0052)", PF_ALERT_BITS, "pfa", row)
+        row = self._build_register_section(
+            "PF Status (0x0053)", PF_STATUS_BITS, "pfs", row)
 
     def _build_register_section(self, title, bit_map, prefix, start_row):
         """Build a labeled grid of bit indicators for one register."""
         ttk.Label(self.status_frame, text=title,
                   font=("Helvetica", 10, "bold")).grid(
-            row=start_row, column=0, columnspan=4, sticky="w", padx=5, pady=(8, 2))
+            row=start_row, column=0, columnspan=8, sticky="w", padx=5, pady=(8, 2))
         
         # Raw hex value label
         hex_key = f"{prefix}_hex"
         hex_lbl = ttk.Label(self.status_frame, text="---", font=("Helvetica", 9))
-        hex_lbl.grid(row=start_row, column=4, columnspan=2, sticky="e", padx=5)
+        hex_lbl.grid(row=start_row, column=8, columnspan=6, sticky="e", padx=5)
         self.status_bit_labels[hex_key] = hex_lbl
 
         row = start_row + 1
@@ -222,11 +301,11 @@ class FuelGaugeDashboard(tk.Tk):
         for bit_pos in sorted(bit_map.keys(), reverse=True):
             name, _high, low = bit_map[bit_pos]
             lbl = tk.Label(self.status_frame, text=f"{name}\n{low}", fg=COLOR_INACTIVE,
-                           font=("Consolas", 9, "bold"), width=24, anchor="center")
+                           font=("Consolas", 9, "bold"), width=12, wraplength=85, anchor="center")
             lbl.grid(row=row, column=col, padx=2, pady=1)
             self.status_bit_labels[f"{prefix}_{bit_pos}"] = lbl
             col += 1
-            if col >= 4:
+            if col >= 14:
                 col = 0
                 row += 1
 
@@ -234,12 +313,24 @@ class FuelGaugeDashboard(tk.Tk):
             row += 1
         return row
 
-    def _update_bit_labels(self, prefix, raw_value, bit_map, hex_str):
+    def _update_bit_labels(self, prefix, raw_value, bit_map, hex_str, enabled=True):
         """Update the text and color of each bit label based on the raw register value."""
         hex_key = f"{prefix}_hex"
         if hex_key in self.status_bit_labels:
-            self.status_bit_labels[hex_key].config(
-                text=hex_str if hex_str else "Err")
+            if not enabled:
+                display_hex = "---"
+            else:
+                display_hex = hex_str if hex_str else "Err"
+            self.status_bit_labels[hex_key].config(text=display_hex)
+
+        if not enabled:
+            for bit_pos, (name, _high, _low) in bit_map.items():
+                key = f"{prefix}_{bit_pos}"
+                if key in self.status_bit_labels:
+                    self.status_bit_labels[key].config(
+                        text=f"{name}\n---",
+                        fg=COLOR_INACTIVE)
+            return
 
         bits = BQ28z620.parse_bits(raw_value, bit_map)
         for bit_pos, (name, _high, _low) in bit_map.items():
@@ -307,6 +398,27 @@ class FuelGaugeDashboard(tk.Tk):
         else:
             if not silent:
                 messagebox.showerror("Connection Error", msg)
+            
+    def toggle_power(self):
+        """Toggle the Bus Pirate 1.8V power and I2C pullups."""
+        if not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Bus Pirate not connected")
+            return
+            
+        if self.power_enabled:
+            success, msg = self.bp.toggle_power_pullups(False)
+            if success:
+                self.power_enabled = False
+                self.btn_power.config(text="Enable Power")
+            else:
+                messagebox.showerror("Error", msg)
+        else:
+            success, msg = self.bp.toggle_power_pullups(True)
+            if success:
+                self.power_enabled = True
+                self.btn_power.config(text="Disable Power")
+            else:
+                messagebox.showerror("Error", msg)
             
     def disconnect(self):
         self.is_polling = False
@@ -410,6 +522,71 @@ class FuelGaugeDashboard(tk.Tk):
             
         self.after(500, self._resume_polling)
 
+    def send_mac_subcmd(self):
+        if not self.bq or not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Not connected")
+            return
+            
+        hex_str = self.mac_subcmd_var.get().strip()
+        if not hex_str: return
+        
+        try:
+            data = [int(p, 16) for p in hex_str.split()]
+        except ValueError:
+            messagebox.showerror("Error", "Invalid hex format. Use e.g. '1f 00'")
+            return
+            
+        self.is_polling = False
+        # send 0x3e and then the bytes
+        self.bp.write_register(self.bq.addr_w, 0x3e, data)
+        self.custom_result_var.set(f"Sent MAC Subcmd: {hex_str.upper()}")
+        self.after(500, self._resume_polling)
+
+    def read_mac_subcmd(self):
+        if not self.bq or not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Not connected")
+            return
+            
+        hex_str = self.mac_subcmd_var.get().strip()
+        if not hex_str: return
+        
+        try:
+            data = [int(p, 16) for p in hex_str.split()]
+        except ValueError:
+            messagebox.showerror("Error", "Invalid hex format. Use e.g. '1f 00'")
+            return
+            
+        self.is_polling = False
+        
+        # 1. send 0x3e and the bytes
+        self.bp.write_register(self.bq.addr_w, 0x3e, data)
+        
+        # Give it a tiny delay to process the MAC command
+        time.sleep(0.05)
+        
+        # 2. read one byte from 0x61
+        len_data = self.bp.read_register(self.bq.addr_w, self.bq.addr_r, 0x61, length=1)
+        if len_data is None or len(len_data) == 0:
+            self.custom_result_var.set("MAC Read Error (length)")
+            self.after(500, self._resume_polling)
+            return
+            
+        expected_bytes = len_data[0]
+        if expected_bytes == 0:
+            self.custom_result_var.set("MAC Read: 0 bytes")
+            self.after(500, self._resume_polling)
+            return
+            
+        # 3. read that many bytes from 0x40
+        mac_data = self.bp.read_register(self.bq.addr_w, self.bq.addr_r, 0x40, length=expected_bytes)
+        if mac_data is not None:
+            res_str = " ".join([f"{b:02X}" for b in mac_data])
+            self.custom_result_var.set(f"{res_str}")
+        else:
+            self.custom_result_var.set("MAC Read Error (data)")
+            
+        self.after(500, self._resume_polling)
+
     def set_clock(self):
         """Save the clock rate and reconnect with the new setting."""
         try:
@@ -476,48 +653,73 @@ class FuelGaugeDashboard(tk.Tk):
         if self.bp and self.bp.connected and self.bq:
             delay = 0.05
             
-            # Read Voltage
-            val, hex_str = self.bq.get_voltage()
-            self.lbl_voltage.config(text=f"{val} mV  ({hex_str})" if val is not None else "Err")
-            self.update()
-            time.sleep(delay)
-                
-            # Read Current
-            val, hex_str = self.bq.get_current()
-            self.lbl_current.config(text=f"{val} mA  ({hex_str})" if val is not None else "Err")
-            self.update()
-            time.sleep(delay)
+            if self.poll_voltage_current.get():
+                # Read Voltage
+                val, hex_str = self.bq.get_voltage()
+                self.lbl_voltage.config(text=f"{val} mV  ({hex_str})" if val is not None else "Err")
+                self.update()
+                time.sleep(delay)
+                    
+                # Read Current
+                val, hex_str = self.bq.get_current()
+                self.lbl_current.config(text=f"{val} mA  ({hex_str})" if val is not None else "Err")
+                self.update()
+                time.sleep(delay)
 
-            # Read toggled status registers
-            if self.show_battery_status.get():
+            # Read status registers
+            # Battery Status
+            en = self.show_battery_status.get()
+            val, hex_str = (None, None)
+            if en: 
                 val, hex_str = self.bq.get_battery_status()
-                self._update_bit_labels("bat", val, BATTERY_STATUS_BITS, hex_str)
-                self.update()
                 time.sleep(delay)
+            self._update_bit_labels("bat", val, BATTERY_STATUS_BITS, hex_str, enabled=en)
+            self.update()
 
-            if self.show_safety_alert.get():
+            # Op Status
+            en = self.show_operation_status.get()
+            val, hex_str = (None, None)
+            if en:
+                val, hex_str = self.bq.get_operation_status()
+                time.sleep(delay)
+            self._update_bit_labels("ops", val, OPERATION_STATUS_BITS, hex_str, enabled=en)
+            self.update()
+
+            # Safety Alert
+            en = self.show_safety_alert.get()
+            val, hex_str = (None, None)
+            if en:
                 val, hex_str = self.bq.get_safety_alert()
-                self._update_bit_labels("sa", val, SAFETY_ALERT_BITS, hex_str)
-                self.update()
                 time.sleep(delay)
+            self._update_bit_labels("sa", val, SAFETY_ALERT_BITS, hex_str, enabled=en)
+            self.update()
 
-            if self.show_safety_status.get():
+            # Safety Status
+            en = self.show_safety_status.get()
+            val, hex_str = (None, None)
+            if en:
                 val, hex_str = self.bq.get_safety_status()
-                self._update_bit_labels("ss", val, SAFETY_STATUS_BITS, hex_str)
-                self.update()
                 time.sleep(delay)
+            self._update_bit_labels("ss", val, SAFETY_STATUS_BITS, hex_str, enabled=en)
+            self.update()
 
-            if self.show_pf_alert.get():
+            # PF Alert
+            en = self.show_pf_alert.get()
+            val, hex_str = (None, None)
+            if en:
                 val, hex_str = self.bq.get_pf_alert()
-                self._update_bit_labels("pfa", val, PF_ALERT_BITS, hex_str)
-                self.update()
                 time.sleep(delay)
+            self._update_bit_labels("pfa", val, PF_ALERT_BITS, hex_str, enabled=en)
+            self.update()
 
-            if self.show_pf_status.get():
+            # PF Status
+            en = self.show_pf_status.get()
+            val, hex_str = (None, None)
+            if en:
                 val, hex_str = self.bq.get_pf_status()
-                self._update_bit_labels("pfs", val, PF_STATUS_BITS, hex_str)
-                self.update()
                 time.sleep(delay)
+            self._update_bit_labels("pfs", val, PF_STATUS_BITS, hex_str, enabled=en)
+            self.update()
                 
         # Schedule next poll
         self.after(POLL_RATE, self.poll_data)

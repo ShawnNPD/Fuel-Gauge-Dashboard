@@ -76,6 +76,32 @@ PF_STATUS_BITS = {
     17: ("DFETF", "Discharge FET Failure",      "Not Detected"),
 }
 
+# OperationStatus MAC 0x0054 (32-bit: B-byte = bits 16-31, A-byte = bits 0-15)
+OPERATION_STATUS_BITS = {
+    29: ("EMSHUT",     "Emerg FET Shutdown",             "Inactive"),
+    28: ("CB",         "Cell Balancing Active",          "Inactive"),
+    27: ("SLPCC",      "CC meas in SLEEP",               "Inactive"),
+    26: ("SLPAD",      "ADC meas in SLEEP",              "Inactive"),
+    25: ("SMBLCAL",    "Auto-offset cal bus low",        "Inactive"),
+    24: ("INIT",       "Init after full reset",          "Inactive"),
+    23: ("SLEEPM",     "SLEEP mode",                     "Inactive"),
+    22: ("XL",         "400-kHz mode",                   "Inactive"),
+    21: ("CAL_OFFSET", "Cal Output (raw CC Offset)",     "Inactive"),
+    20: ("CAL",        "Cal Output (raw ADC & CC)",      "Inactive"),
+    19: ("AUTHCALM",   "Auto CC Offset Cal",             "Inactive"),
+    18: ("AUTH",       "Authentication in prog",         "Inactive"),
+    16: ("SDM",        "SHUTDOWN cmd triggered",         "Inactive"),
+    15: ("SLEEP",      "SLEEP conditions met",           "Inactive"),
+    14: ("SEC1_H",     "SEC_H[1]=1",            "SEC_H[1]=0"),
+    13: ("SEC0_H",     "SEC_H[0]=1",            "SEC_H[0]=0"),
+    12: ("PF",         "Permanent Failure Mode",         "Inactive"),
+    11: ("SS",         "Safety Mode Status",             "Inactive"),
+    10: ("SDV",        "SHUTDOWN low pack vol",          "Inactive"),
+     9: ("SEC1_L",     "SEC_L[1]=1",            "SEC_L[1]=0"),
+     8: ("SEC0_L",     "SEC_L[0]=1",            "SEC_L[0]=0"),
+     2: ("CHG",        "CHG Active",            "CHG Inactive"),
+     1: ("DSG",        "DSG Active",            "DSG Inactive"),
+}
 
 class BQ28z620:
     def __init__(self, bus_pirate, i2c_addr_write=0xAA, i2c_addr_read=0xAB):
@@ -252,6 +278,17 @@ class BQ28z620:
         Returns (raw_value, hex_string) or (None, None).
         """
         data = self.read_mac_subcommand(0x0053)
+        if data and len(data) >= 4:
+            val = self.bytes_to_uint_le(data[:4])
+            return val, f"0x{val:08X}"
+        return None, None
+
+    def get_operation_status(self):
+        """
+        Reads OperationStatus via MAC subcommand 0x0054.
+        Returns (raw_value, hex_string) or (None, None).
+        """
+        data = self.read_mac_subcommand(0x0054)
         if data and len(data) >= 4:
             val = self.bytes_to_uint_le(data[:4])
             return val, f"0x{val:08X}"

@@ -58,6 +58,27 @@ class BusPirate:
             self.connected = False
             return False, f"Failed to connect: {str(e)}"
 
+    def toggle_power_pullups(self, enable=True):
+        if not self.serial or not self.serial.is_open:
+            return False, "Not connected"
+            
+        if enable:
+            self.send_command("W")
+            time.sleep(0.1)
+            self.send_command("1.8")
+            time.sleep(0.1)
+            self.send_command("\r")
+            time.sleep(0.1)
+            self.send_command("P")
+            time.sleep(0.1)
+            return True, "Enabled"
+        else:
+            self.send_command("p")
+            time.sleep(0.1)
+            self.send_command("w")
+            time.sleep(0.1)
+            return True, "Disabled"
+
     def disconnect(self):
         if self.serial and self.serial.is_open:
             # Turn off power and pullups safely
@@ -130,13 +151,19 @@ class BusPirate:
         # Clean up response and extract the final line or data
         hex_pattern = re.compile(r'0x[0-9a-fA-F]{2}', re.IGNORECASE)
         data_strs = []
+        parsing_rx = False
+        
         for line in response.split('\n'):
             line = line.strip().upper()
             
-            # Bus Pirate 5/6 prints ANSI color codes (e.g. \x1b[32m) which contain `[` characters!
-            # Instead of trying to filter out the command echo using `[`, we just explicitly 
-            # only extract hex values from lines containing "RX:" or "READ".
-            if "RX:" in line or "READ" in line:
+            if "RX" in line or "READ" in line:
+                parsing_rx = True
+            elif ("TX" in line or "WRITE" in line or "STOP" in line or 
+                  line.startswith(">") or line.startswith("[")):
+                if not ("RX" in line or "READ" in line):
+                    parsing_rx = False
+                
+            if parsing_rx:
                 matches = hex_pattern.findall(line)
                 if matches:
                     data_strs.extend(matches)
