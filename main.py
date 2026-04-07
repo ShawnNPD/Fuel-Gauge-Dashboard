@@ -410,9 +410,13 @@ class FuelGaugeDashboard(tk.Tk):
         self.lbl_bus_status.config(text="Bus: Connecting...", foreground="orange")
         
         def do_connect():
-            self.bp = BusPirate(port)
-            clock_khz = int(self.clock_var.get() or 10)
-            success, msg = self.bp.connect(clock_khz=clock_khz)
+            try:
+                self.bp = BusPirate(port)
+                clock_khz = int(self.clock_var.get() or 10)
+                success, msg = self.bp.connect(clock_khz=clock_khz)
+            except Exception as e:
+                success, msg = (False, str(e))
+                
             self.after(0, lambda: self._on_connect_finished(success, msg, silent))
             
         threading.Thread(target=do_connect, daemon=True).start()
@@ -431,8 +435,8 @@ class FuelGaugeDashboard(tk.Tk):
             self.is_polling = True
             self.poll_data()
         else:
-            self.btn_connect.config(text="Connect")
-            self.lbl_bus_status.config(text="Bus: Disconnected", foreground="gray")
+            self.btn_connect.config(text="Connect", state="normal")
+            self.lbl_bus_status.config(text="Failed to Connect", foreground="red")
             if not silent:
                 messagebox.showerror("Connection Error", msg)
             
