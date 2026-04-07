@@ -8,5 +8,5 @@ test_archive
 out.txt
 logs
 build
+dist
 *.spec
-FuelGaugeDashboard.exe
