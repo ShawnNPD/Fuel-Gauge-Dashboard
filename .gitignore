@@ -7,3 +7,6 @@ test_archive
 *trm*
 out.txt
 logs
+build
+*.spec
+FuelGaugeDashboard.exe
