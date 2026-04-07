@@ -107,7 +107,7 @@ def test_read_mac_subcommand(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
     mock_bp.read_register.side_effect = [
-        [0x04],                              # MACDataLength from 0x61 = 4
+        [0x08],                              # MACDataLength from 0x61 = 8 (4 data + 4 overhead)
         [0x00, 0x00, 0x00, 0x00],            # 4 data bytes from 0x40
     ]
     bq = BQ28z620(mock_bp)
@@ -121,7 +121,7 @@ def test_get_safety_alert(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
     mock_bp.read_register.side_effect = [
-        [0x04],                              # MACDataLength = 4
+        [0x08],                              # MACDataLength = 8 (4 data + 4 overhead)
         [0x08, 0x00, 0x00, 0x00],            # COV bit set
     ]
     bq = BQ28z620(mock_bp)
@@ -135,7 +135,7 @@ def test_get_safety_status(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
     mock_bp.read_register.side_effect = [
-        [0x04],                              # MACDataLength = 4
+        [0x08],                              # MACDataLength = 8 (4 data + 4 overhead)
         [0x04, 0x00, 0x00, 0x00],            # CUV bit set
     ]
     bq = BQ28z620(mock_bp)
@@ -149,7 +149,7 @@ def test_get_pf_alert(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
     mock_bp.read_register.side_effect = [
-        [0x04],                              # MACDataLength = 4
+        [0x08],                              # MACDataLength = 8 (4 data + 4 overhead)
         [0x01, 0x00, 0x00, 0x00],            # Bit 0 = SUV set
     ]
     bq = BQ28z620(mock_bp)
@@ -163,7 +163,7 @@ def test_get_pf_status(mock_sleep):
     mock_bp = MagicMock()
     mock_bp.write_register.return_value = True
     mock_bp.read_register.side_effect = [
-        [0x04],                              # MACDataLength = 4
+        [0x08],                              # MACDataLength = 8 (4 data + 4 overhead)
         [0x10, 0x00, 0x00, 0x00],            # Bit 4 = VIMR set
     ]
     bq = BQ28z620(mock_bp)
