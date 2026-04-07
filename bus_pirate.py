@@ -10,7 +10,7 @@ class BusPirate:
         self.serial = None
         self.connected = False
 
-    def connect(self, clock_khz=10):
+    def connect(self, clock_khz=10, enable_power=False):
         try:
             for attempt in range(5):
                 try:
@@ -59,15 +59,16 @@ class BusPirate:
 
             # Bus Pirate 5/6 settings for I2C usually default to 400kHz.
             
-            # Enable Bus Pirate 1.8V power supply and Pullups
-            self.send_command("W", timeout=0.5)
-            time.sleep(0.1)
-            self.send_command("1.8", timeout=0.5)# Enable power
-            time.sleep(0.1)
-            self.send_command("\r", timeout=0.5)
-            time.sleep(0.1)
-            self.send_command("P", timeout=0.5) # Enable pullups
-            time.sleep(0.1)
+            # Optionally enable Bus Pirate 1.8V power supply and Pullups
+            if enable_power:
+                self.send_command("W", timeout=0.5)
+                time.sleep(0.1)
+                self.send_command("1.8", timeout=0.5)# Enable power
+                time.sleep(0.1)
+                self.send_command("\r", timeout=0.5)
+                time.sleep(0.1)
+                self.send_command("P", timeout=0.5) # Enable pullups
+                time.sleep(0.1)
 
             self.connected = True
             return True, "Connected successfully"

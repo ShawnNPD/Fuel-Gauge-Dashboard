@@ -26,7 +26,7 @@ class FuelGaugeDashboard(tk.Tk):
         self.bp = None
         self.bq = None
         self.is_polling = False
-        self.power_enabled = True
+        self.power_enabled = False
         self.fet_ctrl_enabled = False
         self.consecutive_errors = 0
         self.error_threshold = 5
@@ -89,7 +89,7 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_connect = ttk.Button(frame_top, text="Connect", command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=5, pady=5)
 
-        self.btn_power = ttk.Button(frame_top, text="Disable Power", command=self.toggle_power)
+        self.btn_power = ttk.Button(frame_top, text="Enable Power", command=self.toggle_power)
         self.btn_power.pack(side="left", padx=5, pady=5)
 
         ttk.Separator(frame_top, orient="vertical").pack(side="left", padx=5, fill="y", pady=5)
@@ -373,7 +373,8 @@ class FuelGaugeDashboard(tk.Tk):
 
     def refresh_ports(self):
         ports = serial.tools.list_ports.comports()
-        port_list = [f"{port.device} - {port.description}" for port in ports]
+        port_list = [f"{port.device} - {port.description}" for port in ports
+                     if "USB Serial Device" in port.description]
         self.port_dropdown['values'] = port_list
         
         config = self.load_config()
@@ -413,7 +414,8 @@ class FuelGaugeDashboard(tk.Tk):
             try:
                 self.bp = BusPirate(port)
                 clock_khz = int(self.clock_var.get() or 10)
-                success, msg = self.bp.connect(clock_khz=clock_khz)
+                enable_pwr = self.power_enabled
+                success, msg = self.bp.connect(clock_khz=clock_khz, enable_power=enable_pwr)
             except Exception as e:
                 success, msg = (False, str(e))
                 
@@ -468,10 +470,13 @@ class FuelGaugeDashboard(tk.Tk):
         self.is_polling = False
         if self.bp:
             self.bp.disconnect()
+        self.power_enabled = False
+        self.btn_power.config(text="Enable Power")
         self.btn_connect.config(text="Connect")
         self.btn_fet_ctrl.config(text="FET Ctrl: ---")
         self.lbl_voltage.config(text="---")
         self.lbl_current.config(text="---")
+        self.lbl_bus_status.config(text="Device Disconnected", foreground="#4a4a4a")
         self.rebuild_status_display() # This will reset bit labels to --- if polling logic handles it
 
     def update_fet_ctrl_button_state(self):
@@ -781,6 +786,11 @@ class FuelGaugeDashboard(tk.Tk):
                     time.sleep(delay)
                 self._update_bit_labels(prefix, val, bit_map, hex_str, enabled=en)
                 self.update()
+
+            # Re-check polling flag — disconnect may have been triggered during
+            # this poll cycle via self.update() processing Tk events.
+            if not self.is_polling:
+                return
 
             if any_success:
                 self.consecutive_errors = 0
