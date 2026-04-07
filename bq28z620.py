@@ -92,15 +92,15 @@ OPERATION_STATUS_BITS = {
     18: ("AUTH",       "Authentication in prog",         "Inactive"),
     16: ("SDM",        "SHUTDOWN cmd triggered",         "Inactive"),
     15: ("SLEEP",      "SLEEP conditions met",           "Inactive"),
-    14: ("SEC1_H",     "SEC_H[1]=1",            "SEC_H[1]=0"),
-    13: ("SEC0_H",     "SEC_H[0]=1",            "SEC_H[0]=0"),
+    14: ("SEC1_H",     "SEC_H[1]=1",                     "SEC_H[1]=0"),
+    13: ("SEC0_H",     "SEC_H[0]=1",                     "SEC_H[0]=0"),
     12: ("PF",         "Permanent Failure Mode",         "Inactive"),
-    11: ("SS",         "Safety Mode Status",             "Inactive"),
+    11: ("SS",         "Safety Mode Active",             "Inactive"),
     10: ("SDV",        "SHUTDOWN low pack vol",          "Inactive"),
-     9: ("SEC1_L",     "SEC_L[1]=1",            "SEC_L[1]=0"),
-     8: ("SEC0_L",     "SEC_L[0]=1",            "SEC_L[0]=0"),
-     2: ("CHG",        "CHG Active",            "CHG Inactive"),
-     1: ("DSG",        "DSG Active",            "DSG Inactive"),
+     9: ("SEC1_L",     "SEC_L[1]=1",                     "SEC_L[1]=0"),
+     8: ("SEC0_L",     "SEC_L[0]=1",                     "SEC_L[0]=0"),
+     2: ("CHG",        "CHG Active",                     "CHG Inactive"),
+     1: ("DSG",        "DSG Active",                     "DSG Inactive"),
 }
 
 class BQ28z620:
@@ -222,12 +222,13 @@ class BQ28z620:
         if not len_data:
             return None
         mac_data_len = len_data[0]
-        if mac_data_len == 0:
+        if mac_data_len <= 4:
             return None
 
-        # Read data from MACData register 0x40
-        data = self.bp.read_register(self.addr_w, self.addr_r, 0x40, length=mac_data_len)
-        if not data or len(data) < mac_data_len:
+        # Read MACData from 0x40. Total length includes 2-byte echo + 2-byte footer.
+        # Register 0x40 starts at data, so reading (len - 4) gets only the data.
+        data = self.bp.read_register(self.addr_w, self.addr_r, 0x40, length=mac_data_len - 4)
+        if not data or len(data) < (mac_data_len - 4):
             return None
 
         return data
@@ -307,6 +308,21 @@ class BQ28z620:
     def toggle_dsg_fet(self):
         """Toggle the Discharge FET via MAC subcommand 0x0020."""
         return self.bp.write_register(self.addr_w, 0x3E, [0x20, 0x00])
+
+    def get_manufacturing_status(self):
+        """
+        Reads ManufacturingStatus via MAC subcommand 0x0057.
+        Returns (raw_value, hex_string) or (None, None).
+        """
+        data = self.read_mac_subcommand(0x0057)
+        if data and len(data) >= 2:
+            val = self.bytes_to_uint_le(data[:2])
+            return val, f"0x{val:04X}"
+        return None, None
+
+    def toggle_fet_control(self):
+        """Toggle FET control via MAC subcommand 0x0022."""
+        return self.bp.write_register(self.addr_w, 0x3E, [0x22, 0x00])
 
     @staticmethod
     def parse_bits(raw_value, bit_map):

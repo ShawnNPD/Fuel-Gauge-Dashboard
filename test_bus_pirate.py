@@ -8,6 +8,11 @@ def test_connect_success(mock_serial_class):
     mock_serial_instance = MagicMock()
     mock_serial_class.return_value = mock_serial_instance
     
+    # Mock hardware responses for identification and command prompts
+    # Return '>' for any read attempts to simulate a responsive Bus Pirate
+    mock_serial_instance.in_waiting = 1
+    mock_serial_instance.read.return_value = b">"
+    
     bp = BusPirate("COM3", baudrate=115200, timeout=1)
     success, msg = bp.connect()
     

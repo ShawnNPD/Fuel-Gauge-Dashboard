@@ -25,31 +25,48 @@ class BusPirate:
                     else:
                         raise e
             
-            # Send Ctrl+C and Enter to clear any hanging menus
-            self.send_command("\x03\r\n\r\n")
+            # 1. Stabilization and Fast Identification
+            # Send Ctrl+C multiple times to break out of any sub-menus or help screens
+            for _ in range(2):
+                self.serial.write(b"\x03\r\n")
+                time.sleep(0.1)
+                
+            self.serial.reset_input_buffer()
+            is_bp, resp = self.identify(timeout=1.0)
+            if not is_bp:
+                self.serial.close()
+                return False, "Device is not responding as a Bus Pirate. Please verify the COM port or reset the hardware."
+
+            # Ensure we have a clean slate
+            self.send_command("\x03\r\n", timeout=0.5)
+            self.serial.reset_input_buffer()
             
-            # Determine I2C mode from your specific Bus Pirate menu
+            # 2. Configure I2C Mode
             # 1. Open Mode menu
-            self.send_command("m")
+            self.send_command("m", timeout=0.5)
             # 2. Select I2C (Option 5)
-            self.send_command("5")
-            # 3. Discard previous broken settings (which were stuck at 0kHz)
-            self.send_command("n")
-            # 4. Set clock rate
-            self.send_command(str(clock_khz))
+            resp_mode = self.send_command("5", timeout=0.5)
+            
+            # 3. Handle optional 'Discard settings? (y/n)' prompt which occurs if 
+            # I2C was already configured with different settings.
+            if "y/n" in resp_mode.lower() or "discard" in resp_mode.lower():
+                self.send_command("n", timeout=0.5)
+            
+            # 4. Set clock rate (e.g., 400kHz, 100kHz, or custom)
+            self.send_command(str(clock_khz), timeout=0.5)
             time.sleep(0.5)
         
 
             # Bus Pirate 5/6 settings for I2C usually default to 400kHz.
             
             # Enable Bus Pirate 1.8V power supply and Pullups
-            self.send_command("W")
+            self.send_command("W", timeout=0.5)
             time.sleep(0.1)
-            self.send_command("1.8")# Enable power
+            self.send_command("1.8", timeout=0.5)# Enable power
             time.sleep(0.1)
-            self.send_command("\r")
+            self.send_command("\r", timeout=0.5)
             time.sleep(0.1)
-            self.send_command("P") # Enable pullups
+            self.send_command("P", timeout=0.5) # Enable pullups
             time.sleep(0.1)
 
             self.connected = True
@@ -82,14 +99,31 @@ class BusPirate:
     def disconnect(self):
         if self.serial and self.serial.is_open:
             # Turn off power and pullups safely
-            self.send_command("p")
-            self.send_command("w")
-            self.send_command("m 1") # HiZ
+            self.send_command("p", timeout=0.2)
+            self.send_command("w", timeout=0.2)
+            self.send_command("m 1", timeout=0.2) # HiZ
             
             self.serial.close()
         self.connected = False
 
-    def send_command(self, cmd, wait_for_response=True):
+    def identify(self, timeout=0.5):
+        """
+        Quickly check if the connected device is a Bus Pirate.
+        Returns (True, prompt) if successful, (False, last_response) otherwise.
+        """
+        if not self.serial or not self.serial.is_open:
+            return False, "Serial port not open"
+            
+        self.serial.reset_input_buffer()
+        # Send a carriage return to trigger the prompt re-printing
+        response = self.send_command("", timeout=timeout)
+        
+        # Look for the common Bus Pirate prompt '>' or the specific 'I2C>' / 'HiZ>' / 'BP5>'
+        if ">" in response:
+            return True, response
+        return False, response
+
+    def send_command(self, cmd, wait_for_response=True, timeout=1.0):
         if not self.serial or not self.serial.is_open:
             return ""
         
@@ -100,7 +134,7 @@ class BusPirate:
             response = ""
             start = time.time()
             # Wait until > or I2C> prompt returns indicating command completion
-            while time.time() - start < 1.0:
+            while time.time() - start < timeout:
                 if self.serial.in_waiting:
                     response += self.serial.read(self.serial.in_waiting).decode('utf-8', errors='ignore')
                 if ">" in response:
@@ -142,11 +176,11 @@ class BusPirate:
 
         # Look for hex values. We must ignore the first parts of the response which is 
         # the Bus Pirate echoing the `[ 0xAA 0x1D [ 0xAB R:2 ]` command we just sent.
-        # We split the response into lines and only parse lines that look like read data 
-        # (e.g., lines containing RX:, READ:, or lines after the echoed brackets)
         
-        if not response:
+        if not response or "I2C ERROR" in response.upper():
             return None
+            
+        # Clean up response and extract the final line or data
 
         # Clean up response and extract the final line or data
         hex_pattern = re.compile(r'0x[0-9a-fA-F]{2}', re.IGNORECASE)
@@ -187,5 +221,8 @@ class BusPirate:
         self.serial.reset_input_buffer()
         data_str = " ".join([hex(b) for b in data_bytes])
         cmd = f"[ {hex(write_addr)} {hex(reg)} {data_str} ]"
-        self.send_command(cmd)
+        response = self.send_command(cmd)
+        
+        if not response or "I2C ERROR" in response.upper():
+            return False
         return True

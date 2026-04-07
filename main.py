@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import serial.tools.list_ports
 import time
+import threading
 import json
 import os
 from datetime import datetime
@@ -26,6 +27,9 @@ class FuelGaugeDashboard(tk.Tk):
         self.bq = None
         self.is_polling = False
         self.power_enabled = True
+        self.fet_ctrl_enabled = False
+        self.consecutive_errors = 0
+        self.error_threshold = 5
 
         # Toggle vars for polling
         self.poll_voltage_current = tk.BooleanVar(value=True)
@@ -96,6 +100,9 @@ class FuelGaugeDashboard(tk.Tk):
         self.clock_entry = ttk.Entry(frame_top, textvariable=self.clock_var, width=6)
         self.clock_entry.pack(side="left", padx=2, pady=5)
         ttk.Button(frame_top, text="Set Clock", command=self.set_clock).pack(side="left", padx=5, pady=5)
+
+        self.lbl_bus_status = ttk.Label(frame_top, text="Bus: Connected", foreground=COLOR_ACTIVE, font=("Helvetica", 10, "bold"))
+        self.lbl_bus_status.pack(side="left", padx=10, pady=5)
         
         # Values Display
         frame_bot = ttk.LabelFrame(self, text="BQ28Z620 Live Metrics")
@@ -175,6 +182,9 @@ class FuelGaugeDashboard(tk.Tk):
         self.btn_toggle_dsg = ttk.Button(frame_cmd, text="Toggle DSG FET", command=self.toggle_dsg_fet)
         self.btn_toggle_dsg.pack(side="left", padx=10, pady=5)
 
+        self.btn_fet_ctrl = ttk.Button(frame_cmd, text="FET Ctrl: ---", command=self.toggle_fet_ctrl)
+        self.btn_fet_ctrl.pack(side="left", padx=10, pady=5)
+
         # Status Register Toggles
         frame_toggles = ttk.LabelFrame(self, text="Polling Toggles")
         frame_toggles.pack(padx=10, pady=5, fill="x")
@@ -222,13 +232,16 @@ class FuelGaugeDashboard(tk.Tk):
         self.show_pf_status.set(state)
         self.show_operation_status.set(state)
         self.rebuild_status_display()
+        self._resume_polling()
 
     def on_vc_toggle(self):
         self._sync_toggle_all_state()
+        self._resume_polling()
 
     def on_individual_toggle(self):
         self._sync_toggle_all_state()
         self.rebuild_status_display()
+        self._resume_polling()
 
     def _sync_toggle_all_state(self):
         any_checked = any([
@@ -317,19 +330,24 @@ class FuelGaugeDashboard(tk.Tk):
         """Update the text and color of each bit label based on the raw register value."""
         hex_key = f"{prefix}_hex"
         if hex_key in self.status_bit_labels:
+            lbl = self.status_bit_labels[hex_key]
+            if not lbl.winfo_exists(): return
+            
             if not enabled:
                 display_hex = "---"
             else:
                 display_hex = hex_str if hex_str else "Err"
-            self.status_bit_labels[hex_key].config(text=display_hex)
+            lbl.config(text=display_hex)
 
         if not enabled:
             for bit_pos, (name, _high, _low) in bit_map.items():
                 key = f"{prefix}_{bit_pos}"
                 if key in self.status_bit_labels:
-                    self.status_bit_labels[key].config(
-                        text=f"{name}\n---",
-                        fg=COLOR_INACTIVE)
+                    lbl = self.status_bit_labels[key]
+                    if lbl.winfo_exists():
+                        lbl.config(
+                            text=f"{name}\n---",
+                            fg=COLOR_INACTIVE)
             return
 
         bits = BQ28z620.parse_bits(raw_value, bit_map)
@@ -338,9 +356,11 @@ class FuelGaugeDashboard(tk.Tk):
             active, state_text = bits[name]
 
             if key in self.status_bit_labels:
-                self.status_bit_labels[key].config(
-                    text=f"{name}\n{state_text}",
-                    fg=COLOR_ACTIVE if active else COLOR_INACTIVE)
+                lbl = self.status_bit_labels[key]
+                if lbl.winfo_exists():
+                    lbl.config(
+                        text=f"{name}\n{state_text}",
+                        fg=COLOR_ACTIVE if active else COLOR_INACTIVE)
 
             # Log state changes
             if self.is_logging:
@@ -386,16 +406,33 @@ class FuelGaugeDashboard(tk.Tk):
         config["last_port"] = port
         self.save_config(config)
             
-        self.bp = BusPirate(port)
-        clock_khz = int(self.clock_var.get() or 10)
-        success, msg = self.bp.connect(clock_khz=clock_khz)
+        self.btn_connect.config(state="disabled", text="Connecting...")
+        self.lbl_bus_status.config(text="Bus: Connecting...", foreground="orange")
         
+        def do_connect():
+            self.bp = BusPirate(port)
+            clock_khz = int(self.clock_var.get() or 10)
+            success, msg = self.bp.connect(clock_khz=clock_khz)
+            self.after(0, lambda: self._on_connect_finished(success, msg, silent))
+            
+        threading.Thread(target=do_connect, daemon=True).start()
+
+    def _on_connect_finished(self, success, msg, silent):
+        self.btn_connect.config(state="normal")
         if success:
             self.btn_connect.config(text="Disconnect")
             self.bq = BQ28z620(self.bp)
+            self.consecutive_errors = 0
+            self.lbl_bus_status.config(text="Bus: Connected", foreground=COLOR_ACTIVE)
+            
+            # Initial FET status check
+            self.update_fet_ctrl_button_state()
+            
             self.is_polling = True
             self.poll_data()
         else:
+            self.btn_connect.config(text="Connect")
+            self.lbl_bus_status.config(text="Bus: Disconnected", foreground="gray")
             if not silent:
                 messagebox.showerror("Connection Error", msg)
             
@@ -410,6 +447,7 @@ class FuelGaugeDashboard(tk.Tk):
             if success:
                 self.power_enabled = False
                 self.btn_power.config(text="Enable Power")
+                self.lbl_bus_status.config(text="Bus: Unpowered / Idle", foreground="orange")
             else:
                 messagebox.showerror("Error", msg)
         else:
@@ -417,6 +455,8 @@ class FuelGaugeDashboard(tk.Tk):
             if success:
                 self.power_enabled = True
                 self.btn_power.config(text="Disable Power")
+                # Automatically resume polling when power is restored
+                self.after(500, self._resume_polling)
             else:
                 messagebox.showerror("Error", msg)
             
@@ -425,8 +465,48 @@ class FuelGaugeDashboard(tk.Tk):
         if self.bp:
             self.bp.disconnect()
         self.btn_connect.config(text="Connect")
+        self.btn_fet_ctrl.config(text="FET Ctrl: ---")
         self.lbl_voltage.config(text="---")
         self.lbl_current.config(text="---")
+        self.rebuild_status_display() # This will reset bit labels to --- if polling logic handles it
+
+    def update_fet_ctrl_button_state(self):
+        """Read ManufacturingStatus and update FET Ctrl button label based on FET_EN (bit 4)."""
+        if not self.bq or not self.btn_fet_ctrl.winfo_exists():
+            return
+            
+        val, hex_str = self.bq.get_manufacturing_status()
+        if val is not None:
+            # Bit 4 is FET_EN
+            self.fet_ctrl_enabled = bool(val & (1 << 4))
+            if self.fet_ctrl_enabled:
+                self.btn_fet_ctrl.config(text="Enable FET Ctrl")
+            else:
+                self.btn_fet_ctrl.config(text="Disable FET Ctrl")
+        else:
+            self.btn_fet_ctrl.config(text="FET Ctrl: Err")
+
+    def toggle_fet_ctrl(self):
+        """Toggle FET control via MAC subcommand 0x0022 and update UI."""
+        if not self.bq or not self.bp or not self.bp.connected:
+            messagebox.showerror("Error", "Not connected")
+            return
+            
+        was_polling = self.is_polling
+        self.is_polling = False
+        
+        # Send toggle command
+        success = self.bq.toggle_fet_control()
+        if success:
+            # Give device a moment to process
+            time.sleep(0.2)
+            # Re-read status to update button
+            self.update_fet_ctrl_button_state()
+        else:
+            messagebox.showerror("Error", "Failed to send FET control toggle")
+            
+        if was_polling:
+            self._resume_polling()
 
     def send_reset(self):
         """Send a RESET command to the BQ28Z620."""
@@ -572,13 +652,13 @@ class FuelGaugeDashboard(tk.Tk):
             return
             
         expected_bytes = len_data[0]
-        if expected_bytes == 0:
-            self.custom_result_var.set("MAC Read: 0 bytes")
+        if expected_bytes <= 4:
+            self.custom_result_var.set("MAC Read: 0 data bytes")
             self.after(500, self._resume_polling)
             return
             
-        # 3. read that many bytes from 0x40
-        mac_data = self.bp.read_register(self.bq.addr_w, self.bq.addr_r, 0x40, length=expected_bytes)
+        # 3. read that many bytes from 0x40 (minus 4 for echo/footer)
+        mac_data = self.bp.read_register(self.bq.addr_w, self.bq.addr_r, 0x40, length=expected_bytes - 4)
         if mac_data is not None:
             res_str = " ".join([f"{b:02X}" for b in mac_data])
             self.custom_result_var.set(f"{res_str}")
@@ -605,7 +685,7 @@ class FuelGaugeDashboard(tk.Tk):
 
     def _resume_polling(self):
         """Resume data polling after a reset."""
-        if self.bp and self.bp.connected:
+        if self.bp and self.bp.connected and not self.is_polling:
             self.is_polling = True
             self.poll_data()
 
@@ -653,73 +733,60 @@ class FuelGaugeDashboard(tk.Tk):
         if self.bp and self.bp.connected and self.bq:
             delay = 0.05
             
+            any_success = False
+            any_attempted = False
+            
+            # Read Voltage & Current
             if self.poll_voltage_current.get():
+                any_attempted = True
                 # Read Voltage
-                val, hex_str = self.bq.get_voltage()
-                self.lbl_voltage.config(text=f"{val} mV  ({hex_str})" if val is not None else "Err")
+                v_val, v_hex = self.bq.get_voltage()
+                if v_val is not None: any_success = True
+                
+                # Check if lbl exists before config (redundant but safe)
+                if self.lbl_voltage.winfo_exists():
+                    self.lbl_voltage.config(text=f"{v_val} mV  ({v_hex})" if v_val is not None else "Err")
                 self.update()
                 time.sleep(delay)
                     
                 # Read Current
-                val, hex_str = self.bq.get_current()
-                self.lbl_current.config(text=f"{val} mA  ({hex_str})" if val is not None else "Err")
+                i_val, i_hex = self.bq.get_current()
+                if i_val is not None: any_success = True
+                if self.lbl_current.winfo_exists():
+                    self.lbl_current.config(text=f"{i_val} mA  ({i_hex})" if i_val is not None else "Err")
                 self.update()
                 time.sleep(delay)
 
             # Read status registers
-            # Battery Status
-            en = self.show_battery_status.get()
-            val, hex_str = (None, None)
-            if en: 
-                val, hex_str = self.bq.get_battery_status()
-                time.sleep(delay)
-            self._update_bit_labels("bat", val, BATTERY_STATUS_BITS, hex_str, enabled=en)
-            self.update()
+            status_regs = [
+                ("bat", self.show_battery_status, self.bq.get_battery_status, BATTERY_STATUS_BITS),
+                ("ops", self.show_operation_status, self.bq.get_operation_status, OPERATION_STATUS_BITS),
+                ("sa",  self.show_safety_alert, self.bq.get_safety_alert, SAFETY_ALERT_BITS),
+                ("ss",  self.show_safety_status, self.bq.get_safety_status, SAFETY_STATUS_BITS),
+                ("pfa", self.show_pf_alert, self.bq.get_pf_alert, PF_ALERT_BITS),
+                ("pfs", self.show_pf_status, self.bq.get_pf_status, PF_STATUS_BITS),
+            ]
 
-            # Op Status
-            en = self.show_operation_status.get()
-            val, hex_str = (None, None)
-            if en:
-                val, hex_str = self.bq.get_operation_status()
-                time.sleep(delay)
-            self._update_bit_labels("ops", val, OPERATION_STATUS_BITS, hex_str, enabled=en)
-            self.update()
+            for prefix, toggle, read_fn, bit_map in status_regs:
+                en = toggle.get()
+                val, hex_str = (None, None)
+                if en:
+                    any_attempted = True
+                    val, hex_str = read_fn()
+                    if val is not None: any_success = True
+                    time.sleep(delay)
+                self._update_bit_labels(prefix, val, bit_map, hex_str, enabled=en)
+                self.update()
 
-            # Safety Alert
-            en = self.show_safety_alert.get()
-            val, hex_str = (None, None)
-            if en:
-                val, hex_str = self.bq.get_safety_alert()
-                time.sleep(delay)
-            self._update_bit_labels("sa", val, SAFETY_ALERT_BITS, hex_str, enabled=en)
-            self.update()
-
-            # Safety Status
-            en = self.show_safety_status.get()
-            val, hex_str = (None, None)
-            if en:
-                val, hex_str = self.bq.get_safety_status()
-                time.sleep(delay)
-            self._update_bit_labels("ss", val, SAFETY_STATUS_BITS, hex_str, enabled=en)
-            self.update()
-
-            # PF Alert
-            en = self.show_pf_alert.get()
-            val, hex_str = (None, None)
-            if en:
-                val, hex_str = self.bq.get_pf_alert()
-                time.sleep(delay)
-            self._update_bit_labels("pfa", val, PF_ALERT_BITS, hex_str, enabled=en)
-            self.update()
-
-            # PF Status
-            en = self.show_pf_status.get()
-            val, hex_str = (None, None)
-            if en:
-                val, hex_str = self.bq.get_pf_status()
-                time.sleep(delay)
-            self._update_bit_labels("pfs", val, PF_STATUS_BITS, hex_str, enabled=en)
-            self.update()
+            if any_success:
+                self.consecutive_errors = 0
+                self.lbl_bus_status.config(text="Bus: Connected", foreground=COLOR_ACTIVE)
+            elif any_attempted:
+                # If commands were attempted but all failed, assume the bus is unpowered or DSG FET is off.
+                # Stop polling silently and update status.
+                self.is_polling = False
+                self.lbl_bus_status.config(text="Bus: Unpowered / Idle", foreground="orange")
+                return
                 
         # Schedule next poll
         self.after(POLL_RATE, self.poll_data)
