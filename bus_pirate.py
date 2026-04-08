@@ -26,6 +26,16 @@ class BusPirate:
                         raise e
             
             # 1. Stabilization and Fast Identification
+            # Send an empty line to trigger any prompt like 'VT100 compatible color mode? (Y/n)>'
+            self.serial.write(b"\r\n")
+            time.sleep(0.3)
+            resp = b""
+            if self.serial.in_waiting:
+                resp = self.serial.read(self.serial.in_waiting)
+            if b"VT100" in resp:
+                self.serial.write(b"n\r\n")
+                time.sleep(0.1)
+
             # Send Ctrl+C multiple times to break out of any sub-menus or help screens
             for _ in range(2):
                 self.serial.write(b"\x03\r\n")
