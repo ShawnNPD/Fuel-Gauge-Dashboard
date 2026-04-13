@@ -63,9 +63,13 @@ class BusPirate:
                 self.send_command("n", timeout=0.5)
             
             # 4. Set clock rate (e.g., 400kHz, 100kHz, or custom)
-            self.send_command(str(clock_khz), timeout=0.5)
+            resp_clock = self.send_command(str(clock_khz), timeout=0.5)
             time.sleep(0.5)
-        
+            
+            # 5. Handle potential new 'Clock stretching' prompt
+            if "stretching" in resp_clock.lower() or "spreading" in resp_clock.lower():
+                self.send_command("1", timeout=0.5) # Option 1 is OFF
+
 
             # Bus Pirate 5/6 settings for I2C usually default to 400kHz.
             
